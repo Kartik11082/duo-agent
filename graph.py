@@ -23,8 +23,9 @@ from pydantic import BaseModel, Field
 from config import settings
 from llm import get_llm
 
-# The labels the agent may choose from. Real repo labels come in milestone 6.
-Label = Literal["bug", "feature", "question", "docs"]
+# The labels the agent may choose from: GitHub's default labels, so they
+# already exist in new repos. A name that doesn't exist would be created.
+Label = Literal["bug", "enhancement", "question", "documentation"]
 
 
 class Triage(BaseModel):
@@ -51,9 +52,9 @@ TRIAGE_PROMPT = """You triage GitHub issues for a software project.
 
 Pick exactly one label:
 - bug: something is broken or behaves differently than documented.
-- feature: a request for new behavior or an improvement.
+- enhancement: a request for new behavior or an improvement.
 - question: the author asks how to do something; nothing is broken.
-- docs: documentation is missing, wrong, or unclear.
+- documentation: documentation is missing, wrong, or unclear.
 
 Issue title: {title}
 
