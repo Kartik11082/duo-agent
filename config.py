@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     # triage and evals need.
     temperature: float = 0.0
 
+    # Telegram approvals (worker.py). Empty defaults so the rest of the
+    # project still runs without a bot; worker.py checks they are set.
+    telegram_bot_token: str = ""
+    telegram_chat_id: int = 0  # only this chat may approve or reject
+    approval_timeout_hours: float = 24.0
+
 
 # Import this everywhere: `from config import settings`
 settings = Settings()

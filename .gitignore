@@ -7,5 +7,5 @@ __pycache__/
 .env
 
 # Local data (SQLite and Chroma, from later milestones)
-*.db
+*.db*
 chroma/
