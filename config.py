@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     telegram_chat_id: int = 0  # only this chat may approve or reject
     approval_timeout_hours: float = 24.0
 
+    # SQLite file shared by the LangGraph checkpointer and the jobs table.
+    db_path: str = "duo.db"
+
+    # GitHub webhooks (server.py). Must match the secret set on the webhook.
+    github_webhook_secret: str = ""
+
 
 # Import this everywhere: `from config import settings`
 settings = Settings()

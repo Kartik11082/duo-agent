@@ -20,9 +20,8 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 from pydantic import BaseModel, Field
 
+from config import settings
 from llm import get_llm
-
-DB_PATH = "duo.db"
 
 # The labels the agent may choose from. Real repo labels come in milestone 6.
 Label = Literal["bug", "feature", "question", "docs"]
@@ -101,7 +100,7 @@ def build_graph():
     builder.add_conditional_edges("approve", route_after_approval, ["apply_label", END])
     builder.add_edge("apply_label", END)
 
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(settings.db_path, check_same_thread=False)
     return builder.compile(checkpointer=SqliteSaver(conn))
 
 
