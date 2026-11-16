@@ -1,12 +1,19 @@
 """The agent's LangGraph workflow.
 
-Milestone 3: triage, then pause for human approval, then (pretend to) act.
-    START -> triage -> approve --yes--> apply_label -> END
-                              `--no---> END
+START -> triage -> propose --any action needs approval--> approve --yes--> execute -> END
+                          |                                       `--no---> END
+                          `--all actions "auto"----------------------------> execute -> END
+
+- triage:  the LLM picks a label (the only LLM call).
+- propose: turns the triage into a list of actions, plain data.
+- policy:  config.PERMISSION_POLICY decides if a human must approve.
+- execute: runs each action through tools.ACTIONS. With no repo in state
+           (the sample issue below, /demo) it's a dry run that changes nothing.
+
 The checkpointer saves state to duo.db after every node, so a paused run
 survives the process exiting and can be resumed later.
 
-Run:
+Run (dry run on the sample issue):
     uv run python graph.py start          # triage, pause, exit
     uv run python graph.py resume yes     # or: resume no
 """
@@ -20,8 +27,9 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 from pydantic import BaseModel, Field
 
-from config import settings
+from config import PERMISSION_POLICY, settings
 from llm import get_llm
+from tools import ACTIONS
 
 # The labels the agent may choose from: GitHub's default labels, so they
 # already exist in new repos. A name that doesn't exist would be created.
@@ -38,14 +46,19 @@ class Triage(BaseModel):
 class IssueState(TypedDict):
     """The data that flows through the graph. Nodes read it and return updates.
 
-    Only plain types (str, bool) so the checkpointer can save it without issue.
+    Only plain types (str, int, bool, lists/dicts of them) so the checkpointer
+    can save it without issue.
     """
 
+    repo: str  # "owner/name"; empty means dry run
+    number: int
     title: str
     body: str
     label: str  # set by triage
     reasoning: str  # set by triage
+    actions: list[dict]  # set by propose: [{"name": ..., "args": {...}}]
     approved: bool  # set by approve
+    results: list[str]  # set by execute: one summary line per action
 
 
 TRIAGE_PROMPT = """You triage GitHub issues for a software project.
@@ -71,47 +84,84 @@ def triage_issue(state: IssueState) -> dict:
     return {"label": triage.label, "reasoning": triage.reasoning}
 
 
+def propose_actions(state: IssueState) -> dict:
+    """Turn the triage into actions: data that can be shown, checked, and run."""
+    comment = (
+        f"🤖 **duo-agent triage**: labeled `{state['label']}`.\n\n"
+        f"> {state['reasoning']}"
+    )
+    return {
+        "actions": [
+            {"name": "add_label", "args": {"label": state["label"]}},
+            {"name": "post_comment", "args": {"text": comment}},
+        ],
+        "results": [],  # clear results left by an earlier run on this thread
+    }
+
+
+def route_by_policy(state: IssueState) -> str:
+    """Pause for approval unless every action is explicitly "auto"."""
+    for action in state["actions"]:
+        if PERMISSION_POLICY.get(action["name"]) != "auto":
+            return "approve"
+    return "execute"
+
+
 def ask_approval(state: IssueState) -> dict:
     """Pause until a human answers "yes" or "no".
 
     On resume, LangGraph runs this whole function again from the top, and this
     time interrupt() returns the human's answer. So no side effects here.
     """
-    answer = interrupt({"label": state["label"], "reasoning": state["reasoning"]})
+    answer = interrupt({"actions": state["actions"], "reasoning": state["reasoning"]})
     return {"approved": answer == "yes"}
 
 
 def route_after_approval(state: IssueState) -> str:
-    return "apply_label" if state["approved"] else END
+    return "execute" if state["approved"] else END
 
 
-def apply_label(state: IssueState) -> dict:
-    """Placeholder for the real GitHub call in milestone 6."""
-    print(f"Would apply label '{state['label']}' on GitHub.")
-    return {}
+def execute_actions(state: IssueState) -> dict:
+    """Run each action on GitHub, or only describe it when there's no repo."""
+    if not state.get("repo"):
+        return {
+            "results": [f"(dry run) {a['name']} {a['args']}" for a in state["actions"]]
+        }
+
+    results = []
+    for action in state["actions"]:
+        run = ACTIONS[action["name"]]
+        results.append(run(state["repo"], state["number"], **action["args"]))
+    return {"results": results}
 
 
 def build_graph():
     builder = StateGraph(IssueState)
     builder.add_node("triage", triage_issue)
+    builder.add_node("propose", propose_actions)
     builder.add_node("approve", ask_approval)
-    builder.add_node("apply_label", apply_label)
+    builder.add_node("execute", execute_actions)
+
     builder.add_edge(START, "triage")
-    builder.add_edge("triage", "approve")
-    builder.add_conditional_edges("approve", route_after_approval, ["apply_label", END])
-    builder.add_edge("apply_label", END)
+    builder.add_edge("triage", "propose")
+    builder.add_conditional_edges("propose", route_by_policy, ["approve", "execute"])
+    builder.add_conditional_edges("approve", route_after_approval, ["execute", END])
+    builder.add_edge("execute", END)
 
     conn = sqlite3.connect(settings.db_path, check_same_thread=False)
     return builder.compile(checkpointer=SqliteSaver(conn))
 
 
+# No repo, so running it is always a dry run.
 SAMPLE_ISSUE = {
+    "repo": "",
+    "number": 0,
     "title": "App crashes when uploading a file larger than 10MB",
     "body": "Steps: open the upload page, pick a 12MB PNG, click Upload. "
     "The page goes blank and the console shows 'RangeError: Maximum call stack'.",
 }
 
-# Identifies this run in the checkpointer. Later: one thread per GitHub issue.
+# Identifies the CLI's run in the checkpointer. Real issues get "owner/repo#N".
 CONFIG = {"configurable": {"thread_id": "issue-1"}}
 
 
@@ -128,9 +178,13 @@ if __name__ == "__main__":
         sys.exit(1)
 
     if "__interrupt__" in result:
-        proposal = result["__interrupt__"][0].value
-        print(f"Paused. Proposed label: {proposal['label']}")
-        print(f"Reason: {proposal['reasoning']}")
+        print("Paused. Proposed actions:")
+        for action in result["__interrupt__"][0].value["actions"]:
+            print(f"  - {action['name']}: {action['args']}")
         print("Approve with: uv run python graph.py resume yes   (or no)")
+    elif result["results"]:
+        print("Executed:")
+        for line in result["results"]:
+            print(f"  - {line}")
     else:
-        print("Finished:", "approved" if result["approved"] else "rejected")
+        print("Rejected, nothing done.")

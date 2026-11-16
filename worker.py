@@ -1,7 +1,6 @@
 """Telegram bot plus job loop: starts graph runs and resumes them from button taps.
 
-- Job loop: every 2 seconds, claim a queued GitHub job (from server.py), triage
-  the issue, and send the proposal with Approve/Reject buttons.
+- Job loop: every 2 seconds, claim a queued GitHub job (from server.py), triage the issue, and send the proposal with Approve/Reject buttons.
 - /demo: the same flow for a hardcoded sample issue.
 - Tapping a button resumes that paused run from duo.db, even after a restart.
 
@@ -37,14 +36,45 @@ def is_allowed(update: Update) -> bool:
     return chat is not None and chat.id == settings.telegram_chat_id
 
 
+def describe_actions(actions: list[dict]) -> str:
+    """List actions with their arguments, so you see exactly what will run."""
+    lines = []
+    for action in actions:
+        lines.append(f"• {action['name']}")
+        for key, value in action["args"].items():
+            lines.append(f"  {key}: {value}")
+    return "\n".join(lines)
+
+
+def describe_results(results: list[str]) -> str:
+    return "\n".join(f"• {line}" for line in results)
+
+
 async def triage_and_ask(bot: Bot, thread_id: str, issue: dict, heading: str) -> None:
-    """Run the graph until it pauses for approval, then send the proposal."""
+    """Run the graph until it pauses for approval, then send the proposal.
+
+    If the policy marks every action "auto", the graph doesn't pause: it runs
+    the actions and we just report the results.
+    """
     config = {"configurable": {"thread_id": thread_id}}
-    graph_input = {"title": issue["title"], "body": issue["body"]}
+    graph_input = {
+        "repo": issue["repo"],  # empty for the sample issue: dry run
+        "number": issue["number"],
+        "title": issue["title"],
+        "body": issue["body"],
+    }
     # graph.invoke blocks while the LLM runs; a thread keeps the bot responsive.
     result = await asyncio.to_thread(graph.invoke, graph_input, config)
-    proposal = result["__interrupt__"][0].value
 
+    if "__interrupt__" not in result:
+        await bot.send_message(
+            chat_id=settings.telegram_chat_id,
+            text=f"{heading}\n\n⚡ Auto-executed:\n{describe_results(result['results'])}",
+        )
+        log.info("Auto-executed %s", thread_id)
+        return
+
+    proposal = result["__interrupt__"][0].value
     buttons = InlineKeyboardMarkup(
         [
             [
@@ -55,12 +85,10 @@ async def triage_and_ask(bot: Bot, thread_id: str, issue: dict, heading: str) ->
     )
     await bot.send_message(
         chat_id=settings.telegram_chat_id,
-        text=f"{heading}\n\n"
-        f"Proposed label: {proposal['label']}\n"
-        f"Reason: {proposal['reasoning']}",
+        text=f"{heading}\n\nProposed actions:\n{describe_actions(proposal['actions'])}",
         reply_markup=buttons,
     )
-    log.info("Paused %s, proposed label %s", thread_id, proposal["label"])
+    log.info("Paused %s with %d action(s)", thread_id, len(proposal["actions"]))
 
 
 async def demo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -69,7 +97,7 @@ async def demo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     await update.message.reply_text("Triaging the sample issue...")
     thread_id = f"demo-{uuid.uuid4().hex[:8]}"
-    heading = f"Issue: {SAMPLE_ISSUE['title']}"
+    heading = f"Issue (dry run): {SAMPLE_ISSUE['title']}"
     await triage_and_ask(context.bot, thread_id, SAMPLE_ISSUE, heading)
 
 
@@ -128,11 +156,17 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     # Editing first removes the buttons, so a second tap is less likely.
     await query.edit_message_text(f"{original}\n\nWorking...")
-    result = await asyncio.to_thread(graph.invoke, Command(resume=answer), config)
+    try:
+        result = await asyncio.to_thread(graph.invoke, Command(resume=answer), config)
+    except Exception as error:
+        # E.g. GitHub down mid-way. Safe to retry later: both actions are idempotent.
+        log.exception("Resuming %s failed", thread_id)
+        await query.edit_message_text(f"{original}\n\n⚠️ Failed: {error}")
+        return
 
     if outcome is None:
         if result["approved"]:
-            outcome = f"✅ Approved: label '{result['label']}' applied (simulated)."
+            outcome = f"✅ Approved:\n{describe_results(result['results'])}"
         else:
             outcome = "❌ Rejected, nothing done."
     await query.edit_message_text(f"{original}\n\n{outcome}")

@@ -39,5 +39,12 @@ class Settings(BaseSettings):
     github_private_key_path: str = ""
 
 
+# Which actions need a human tap ("approve") and which run on their own ("auto").
+# Anything not listed, or any other value, counts as "approve": the safe default.
+PERMISSION_POLICY = {
+    "add_label": "approve",
+    "post_comment": "approve",
+}
+
 # Import this everywhere: `from config import settings`
 settings = Settings()
