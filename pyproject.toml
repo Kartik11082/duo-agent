@@ -13,3 +13,36 @@ dependencies = [
     "python-telegram-bot>=22.8",
     "uvicorn>=0.54.0",
 ]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = [
+  "E", "W",   # pycodestyle
+  "F",        # pyflakes: unused imports/vars, undefined names
+  "I",        # import sorting
+  "B",        # bugbear: common bug patterns
+  "UP",       # pyupgrade: modern syntax
+  "SIM",      # simplify
+  "C4",       # comprehensions
+  "N",        # pep8 naming
+  "ARG",      # unused arguments
+  "PL",       # pylint rules, reimplemented in Ruff
+  "RUF",      # ruff-specific
+]
+ignore = [
+  "E501",     # line length is the formatter's job
+  "PLR2004",  # magic-value comparisons: too noisy
+  "PLR0913",  # too many arguments: noisy for handlers
+]
+
+[tool.ruff.format]
+quote-style = "double"
+docstring-code-format = true
+
+[dependency-groups]
+dev = [
+    "ruff>=0.17.5",
+]
