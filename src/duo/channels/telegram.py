@@ -1,10 +1,9 @@
-"""Telegram bot plus job loop: starts graph runs and resumes them from button taps.
+"""Telegram: starts triage runs, sends proposals, and resumes runs from button taps.
 
-- Job loop: every 2 seconds, claim a queued GitHub job (from server.py), triage the issue, and send the proposal with Approve/Reject buttons.
+- triage_and_ask: run the graph for an issue and send the proposal with
+  Approve/Reject buttons (apps/worker.py calls it for each queued job).
 - /demo: the same flow for a hardcoded sample issue.
 - Tapping a button resumes that paused run from duo.db, even after a restart.
-
-Run:  uv run python worker.py
 """
 
 import asyncio
@@ -14,17 +13,11 @@ from datetime import datetime, timedelta, timezone
 
 from langgraph.types import Command
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
+from telegram.ext import ContextTypes
 
-import db
-from config import settings
-from graph import SAMPLE_ISSUE, build_graph
+from duo.agents.triage import SAMPLE_ISSUE, build_graph
+from duo.config import settings
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-)
-# httpx logs every request URL at INFO, and Telegram URLs contain the bot token.
-logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger("duo.worker")
 
 graph = build_graph()
@@ -101,34 +94,6 @@ async def demo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await triage_and_ask(context.bot, thread_id, SAMPLE_ISSUE, heading)
 
 
-async def process_jobs(bot: Bot) -> None:
-    """Background loop: run queued jobs one at a time, forever."""
-    while True:
-        job = db.claim_next_job()
-        if job is None:
-            await asyncio.sleep(2)
-            continue
-
-        try:
-            issue = job["payload"]
-            heading = f"{job['thread_id']}: {issue['title']}\n{issue['url']}"
-            await triage_and_ask(bot, job["thread_id"], issue, heading)
-            db.finish_job(job["id"], "done")  # done = proposal sent
-        except Exception as error:
-            # Catch everything so one bad job can't stop the loop.
-            log.exception("Job %s failed", job["id"])
-            db.finish_job(job["id"], "failed", str(error))
-
-
-async def start_job_loop(app: Application) -> None:
-    """Runs once when the bot starts (post_init)."""
-    reset = db.reset_running_jobs()
-    if reset:
-        log.info("Reset %d job(s) left running by a previous crash", reset)
-    # Keep a reference, or Python may garbage-collect the running task.
-    app.bot_data["job_loop"] = asyncio.create_task(process_jobs(app.bot))
-
-
 async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Approve/Reject tap: resume the paused run named in the button."""
     query = update.callback_query
@@ -171,23 +136,3 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             outcome = "❌ Rejected, nothing done."
     await query.edit_message_text(f"{original}\n\n{outcome}")
     log.info("Resumed %s with %s", thread_id, answer)
-
-
-def main() -> None:
-    if not settings.telegram_bot_token or not settings.telegram_chat_id:
-        raise SystemExit("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env first.")
-
-    app = (
-        Application.builder()
-        .token(settings.telegram_bot_token)
-        .post_init(start_job_loop)
-        .build()
-    )
-    app.add_handler(CommandHandler("demo", demo))
-    app.add_handler(CallbackQueryHandler(on_button))
-    log.info("Worker started. Waiting for jobs; /demo also works.")
-    app.run_polling()  # long polling: no public URL needed
-
-
-if __name__ == "__main__":
-    main()

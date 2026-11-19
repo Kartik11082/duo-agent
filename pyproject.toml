@@ -14,6 +14,14 @@ dependencies = [
     "uvicorn>=0.54.0",
 ]
 
+[project.scripts]
+duo-server = "duo.apps.server:main"
+duo-worker = "duo.apps.worker:main"
+
+[build-system]
+requires = ["uv_build>=0.11.4,<0.12.0"]
+build-backend = "uv_build"
+
 [tool.ruff]
 line-length = 88
 target-version = "py313"

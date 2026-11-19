@@ -11,7 +11,7 @@ import json
 import sqlite3
 from contextlib import contextmanager
 
-from config import settings
+from duo.config import settings
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (

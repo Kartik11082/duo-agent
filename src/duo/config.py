@@ -30,10 +30,10 @@ class Settings(BaseSettings):
     # SQLite file shared by the LangGraph checkpointer and the jobs table.
     db_path: str = "duo.db"
 
-    # GitHub webhooks (server.py). Must match the secret set on the webhook.
+    # GitHub webhooks (connectors/github/webhook.py). Must match the secret set on the webhook.
     github_webhook_secret: str = ""
 
-    # GitHub App (tools.py): the agent acts on GitHub as its own bot account.
+    # GitHub App (connectors/github/auth.py): the agent acts on GitHub as its own bot account.
     github_app_id: int = 0
     # Keep the .pem outside this folder: OneDrive would sync it to the cloud.
     github_private_key_path: str = ""
@@ -46,5 +46,5 @@ PERMISSION_POLICY = {
     "post_comment": "approve",
 }
 
-# Import this everywhere: `from config import settings`
+# Import this everywhere: `from duo.config import settings`
 settings = Settings()

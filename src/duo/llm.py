@@ -4,13 +4,13 @@ Everything else calls get_llm() and gets back a LangChain chat model. It
 doesn't matter whether that model runs on Ollama or (later) Bedrock; the
 interface is the same: .invoke(), .bind_tools(), .with_structured_output().
 
-Smoke test:  uv run python llm.py
+Smoke test:  uv run python -m duo.llm
 """
 
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 
-from config import settings
+from duo.config import settings
 
 
 def get_llm() -> BaseChatModel:

@@ -7,15 +7,15 @@ START -> triage -> propose --any action needs approval--> approve --yes--> execu
 - triage:  the LLM picks a label (the only LLM call).
 - propose: turns the triage into a list of actions, plain data.
 - policy:  config.PERMISSION_POLICY decides if a human must approve.
-- execute: runs each action through tools.ACTIONS. With no repo in state
+- execute: runs each action through connectors/github/tools.ACTIONS. With no repo in state
            (the sample issue below, /demo) it's a dry run that changes nothing.
 
 The checkpointer saves state to duo.db after every node, so a paused run
 survives the process exiting and can be resumed later.
 
 Run (dry run on the sample issue):
-    uv run python graph.py start          # triage, pause, exit
-    uv run python graph.py resume yes     # or: resume no
+    uv run python -m duo.agents.triage start          # triage, pause, exit
+    uv run python -m duo.agents.triage resume yes     # or: resume no
 """
 
 import sqlite3
@@ -27,9 +27,9 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 from pydantic import BaseModel, Field
 
-from config import PERMISSION_POLICY, settings
-from llm import get_llm
-from tools import ACTIONS
+from duo.config import PERMISSION_POLICY, settings
+from duo.connectors.github.tools import ACTIONS
+from duo.llm import get_llm
 
 # The labels the agent may choose from: GitHub's default labels, so they
 # already exist in new repos. A name that doesn't exist would be created.
@@ -174,14 +174,14 @@ if __name__ == "__main__":
     elif len(args) == 2 and args[0] == "resume" and args[1] in ("yes", "no"):
         result = graph.invoke(Command(resume=args[1]), CONFIG)
     else:
-        print("usage: graph.py start | graph.py resume yes|no")
+        print("usage: python -m duo.agents.triage start | resume yes|no")
         sys.exit(1)
 
     if "__interrupt__" in result:
         print("Paused. Proposed actions:")
         for action in result["__interrupt__"][0].value["actions"]:
             print(f"  - {action['name']}: {action['args']}")
-        print("Approve with: uv run python graph.py resume yes   (or no)")
+        print("Approve with: uv run python -m duo.agents.triage resume yes   (or no)")
     elif result["results"]:
         print("Executed:")
         for line in result["results"]:
