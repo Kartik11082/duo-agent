@@ -30,6 +30,15 @@ class Settings(BaseSettings):
     # SQLite file shared by the LangGraph checkpointer and the jobs table.
     db_path: str = "duo.db"
 
+    # Postgres for the LangGraph checkpointer and the jobs table, e.g.
+    # postgresql://user:password@127.0.0.1:5432/duo. Set it in .env.
+    database_url: str = ""
+    # Read by docker-compose.yml, not by Python. Declared here only because
+    # unknown keys in .env are an error (which catches typos in the others).
+    postgres_user: str = ""
+    postgres_password: str = ""
+    postgres_db: str = ""
+
     # GitHub webhooks (connectors/github/webhook.py). Must match the secret set on the webhook.
     github_webhook_secret: str = ""
 
