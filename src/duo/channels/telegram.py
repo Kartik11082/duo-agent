@@ -9,7 +9,7 @@
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from langgraph.types import Command
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -94,7 +94,7 @@ async def demo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await triage_and_ask(context.bot, thread_id, SAMPLE_ISSUE, heading)
 
 
-async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def on_button(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
     """Approve/Reject tap: resume the paused run named in the button."""
     query = update.callback_query
     if not is_allowed(update):
@@ -112,7 +112,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     # Lazy expiry: checked only when someone taps. An expired run is closed as "no".
-    age = datetime.now(timezone.utc) - query.message.date
+    age = datetime.now(UTC) - query.message.date
     if age > timedelta(hours=settings.approval_timeout_hours):
         answer = "no"
         outcome = "⌛ Expired, nothing done."
