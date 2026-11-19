@@ -51,6 +51,10 @@ ignore = [
 quote-style = "double"
 docstring-code-format = true
 
+[tool.pyright]
+include = ["src"]
+typeCheckingMode = "basic"  # start lenient; tighten later
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"  # list skipped tests with their reasons at the end
