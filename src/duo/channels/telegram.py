@@ -108,12 +108,15 @@ async def on_button(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None
     if not is_allowed(update):
         await query.answer("Not allowed.")
         return
+
+    # A message older than 48 hours comes as an InaccessibleMessage: no text,
+    # and it can't be edited. Say so on the tap itself; the run stays paused.
+    if not isinstance(query.message, Message):
+        await query.answer("⌛ Expired, nothing done.")
+        return
     await query.answer()  # stops the loading spinner on the button
 
-    # Our buttons always carry data. A message older than 48 hours comes as an
-    # InaccessibleMessage, which has no text: not handled yet.
-    assert query.data is not None
-    assert isinstance(query.message, Message)
+    assert query.data is not None  # our buttons always carry data
 
     answer, thread_id = query.data.split(":", 1)
     config: RunnableConfig = {"configurable": {"thread_id": thread_id}}

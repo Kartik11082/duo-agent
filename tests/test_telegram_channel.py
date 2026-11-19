@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
-from telegram import Chat, Message
+from telegram import Chat, InaccessibleMessage, Message
 
 from duo.agents import triage
 from duo.config import settings
@@ -73,16 +73,19 @@ def send_proposal(tg):
     return sent, approve.callback_data, reject.callback_data
 
 
-def tap(tg, data, text, chat_id=None):
-    """Tap a button: call on_button with a fake update. Returns the query."""
+def tap(tg, data, text, chat_id=None, inaccessible=False):
+    """Tap a button: call on_button with a fake update. Returns the query.
+
+    inaccessible=True taps a message older than 48 hours, which Telegram
+    sends as an InaccessibleMessage.
+    """
     chat_id = chat_id or settings.telegram_chat_id
-    # A real Message, because on_button checks isinstance(query.message, Message).
-    message = Message(
-        message_id=1,
-        date=datetime.now(UTC),
-        chat=Chat(id=chat_id, type="private"),
-        text=text,
-    )
+    chat = Chat(id=chat_id, type="private")
+    # Real message objects, because on_button checks isinstance(..., Message).
+    if inaccessible:
+        message = InaccessibleMessage(chat=chat, message_id=1)
+    else:
+        message = Message(message_id=1, date=datetime.now(UTC), chat=chat, text=text)
     query = SimpleNamespace(data=data, message=message, answers=[], edits=[])
 
     async def answer(text=None):
@@ -148,3 +151,13 @@ def test_other_chat_is_not_allowed(tg, github):
     assert query.answers == ["Not allowed."]
     assert query.edits == []
     assert github == []
+
+
+def test_tap_on_a_message_older_than_48_hours_is_expired(tg, github):
+    sent, approve, _ = send_proposal(tg)
+    query = tap(tg, approve, sent.text, inaccessible=True)
+    assert query.answers == ["⌛ Expired, nothing done."]
+    assert query.edits == []  # an inaccessible message can't be edited
+    assert github == []
+    config = {"configurable": {"thread_id": THREAD_ID}}
+    assert tg.graph.get_state(config).next == ("approve",)  # still paused
