@@ -1,0 +1,57 @@
+# Lint, type-check and test on every push and pull request. Needs no secrets.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+
+    # A throwaway Postgres for the storage tests, same image as docker-compose.yml.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_USER: duo
+          POSTGRES_PASSWORD: ci-only-password # not a secret: exists only in this job
+          POSTGRES_DB: duo
+        ports:
+          - 5432:5432
+        # Steps start only once the database accepts connections.
+        options: >-
+          --health-cmd "pg_isready -U duo"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://duo:ci-only-password@127.0.0.1:5432/duo
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # setup-uv publishes no moving major tag after v7, so pin the release.
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies (fails if uv.lock is out of date)
+        run: uv sync --locked
+
+      - name: Ruff lint
+        run: uv run ruff check
+
+      - name: Ruff format
+        run: uv run ruff format --check
+
+      - name: Pyright
+        run: uv run pyright
+
+      - name: Pytest
+        run: uv run pytest
