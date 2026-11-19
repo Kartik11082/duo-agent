@@ -51,7 +51,13 @@ ignore = [
 quote-style = "double"
 docstring-code-format = true
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"  # list skipped tests with their reasons at the end
+
 [dependency-groups]
 dev = [
+    "pyright>=1.1.414",
+    "pytest>=9.2.0",
     "ruff>=0.17.5",
 ]
