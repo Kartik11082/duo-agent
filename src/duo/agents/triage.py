@@ -22,11 +22,13 @@ import atexit
 import sys
 from typing import Literal, TypedDict
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
-from psycopg.rows import dict_row
+from psycopg import Connection
+from psycopg.rows import DictRow, dict_row
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, Field
 
@@ -46,17 +48,22 @@ class Triage(BaseModel):
     reasoning: str = Field(description="One or two sentences explaining the label.")
 
 
-class IssueState(TypedDict):
+class IssueInput(TypedDict):
+    """What a run starts with: the issue. The nodes fill in the rest of IssueState."""
+
+    repo: str  # "owner/name"; empty means dry run
+    number: int
+    title: str
+    body: str
+
+
+class IssueState(IssueInput):
     """The data that flows through the graph. Nodes read it and return updates.
 
     Only plain types (str, int, bool, lists/dicts of them) so the checkpointer
     can save it without issue.
     """
 
-    repo: str  # "owner/name"; empty means dry run
-    number: int
-    title: str
-    body: str
     label: str  # set by triage
     reasoning: str  # set by triage
     actions: list[dict]  # set by propose: [{"name": ..., "args": {...}}]
@@ -84,6 +91,8 @@ def triage_issue(state: IssueState) -> dict:
     llm = get_llm().with_structured_output(Triage)
     prompt = TRIAGE_PROMPT.format(title=state["title"], body=state["body"])
     triage = llm.invoke(prompt)
+    # Typed as dict | BaseModel; with a Pydantic schema it is always a Triage.
+    assert isinstance(triage, Triage)
     return {"label": triage.label, "reasoning": triage.reasoning}
 
 
@@ -143,7 +152,7 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
 
     Tests pass InMemorySaver() so they don't need a database.
     """
-    builder = StateGraph(IssueState)
+    builder = StateGraph(IssueState, input_schema=IssueInput)
     builder.add_node("triage", triage_issue)
     builder.add_node("propose", propose_actions)
     builder.add_node("approve", ask_approval)
@@ -158,7 +167,7 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     if checkpointer is None:
         # A pool, because Telegram handlers run the graph from several threads.
         # PostgresSaver needs these three connection settings.
-        pool = ConnectionPool(
+        pool: ConnectionPool[Connection[DictRow]] = ConnectionPool(
             settings.database_url,
             kwargs={
                 "autocommit": True,
@@ -176,7 +185,7 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
 
 
 # No repo, so running it is always a dry run.
-SAMPLE_ISSUE = {
+SAMPLE_ISSUE: IssueInput = {
     "repo": "",
     "number": 0,
     "title": "App crashes when uploading a file larger than 10MB",
@@ -185,7 +194,7 @@ SAMPLE_ISSUE = {
 }
 
 # Identifies the CLI's run in the checkpointer. Real issues get "owner/repo#N".
-CONFIG = {"configurable": {"thread_id": "issue-1"}}
+CONFIG: RunnableConfig = {"configurable": {"thread_id": "issue-1"}}
 
 
 if __name__ == "__main__":
