@@ -27,9 +27,6 @@ class Settings(BaseSettings):
     telegram_chat_id: int = 0  # only this chat may approve or reject
     approval_timeout_hours: float = 24.0
 
-    # SQLite file shared by the LangGraph checkpointer and the jobs table.
-    db_path: str = "duo.db"
-
     # Postgres for the LangGraph checkpointer and the jobs table, e.g.
     # postgresql://user:password@127.0.0.1:5432/duo. Set it in .env.
     database_url: str = ""

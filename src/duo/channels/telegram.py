@@ -3,7 +3,7 @@
 - triage_and_ask: run the graph for an issue and send the proposal with
   Approve/Reject buttons (apps/worker.py calls it for each queued job).
 - /demo: the same flow for a hardcoded sample issue.
-- Tapping a button resumes that paused run from duo.db, even after a restart.
+- Tapping a button resumes that paused run from Postgres, even after a restart.
 """
 
 import asyncio
