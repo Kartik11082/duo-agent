@@ -8,6 +8,7 @@ stub fails instead of calling out.
 
 import pytest
 
+from duo.agents import triage
 from duo.config import settings
 
 WEBHOOK_SECRET = "test-webhook-secret"
@@ -26,3 +27,20 @@ def offline_settings(monkeypatch):
     monkeypatch.setattr(settings, "github_webhook_secret", WEBHOOK_SECRET)
     monkeypatch.setattr(settings, "ollama_base_url", "http://127.0.0.1:9")  # nothing
     monkeypatch.setattr(settings, "database_url", "")  # only test_storage.py sets one
+
+
+class FakeLLM:
+    """Stands in for get_llm()'s model: always labels the issue "bug"."""
+
+    def with_structured_output(self, _schema):
+        return self
+
+    def invoke(self, _prompt):
+        return triage.Triage(label="bug", reasoning="Stub reasoning.")
+
+
+@pytest.fixture
+def fake_llm(monkeypatch):
+    """Replace the triage LLM call. Patched in triage, where get_llm is looked up."""
+    # get_llm() returns a model; calling the class FakeLLM() returns one too.
+    monkeypatch.setattr(triage, "get_llm", FakeLLM)
