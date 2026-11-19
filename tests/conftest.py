@@ -6,15 +6,21 @@ The autouse fixture below blanks those settings for every test, so a missing
 stub fails instead of calling out.
 """
 
+import os
+
+import psycopg
 import pytest
+from psycopg.conninfo import make_conninfo
 
 from duo.agents import triage
 from duo.config import settings
 
 WEBHOOK_SECRET = "test-webhook-secret"
 CHAT_ID = 1234  # the one chat allowed to use the bot in tests
+TEST_DB = "duo_test"
 
-# The storage tests derive their test database from this; see test_storage.py.
+# Captured before offline_settings blanks it: test_database_url derives a
+# separate test database from it, so tests never touch the real "duo" data.
 REAL_DATABASE_URL = settings.database_url
 
 
@@ -27,6 +33,39 @@ def offline_settings(monkeypatch):
     monkeypatch.setattr(settings, "github_webhook_secret", WEBHOOK_SECRET)
     monkeypatch.setattr(settings, "ollama_base_url", "http://127.0.0.1:9")  # nothing
     monkeypatch.setattr(settings, "database_url", "")  # only test_storage.py sets one
+
+
+@pytest.fixture(scope="session")
+def test_database_url():
+    """The URL of the duo_test database, created if missing (once per test run).
+
+    Skips the requesting tests if Postgres isn't reachable, so the suite still
+    runs without Docker. In CI (where GitHub sets CI=true) Postgres must be
+    there, so a missing database fails instead of passing by skipping.
+    """
+
+    def unavailable(reason):
+        if os.environ.get("CI"):
+            pytest.fail(f"Postgres is required in CI: {reason}")
+        pytest.skip(f"Postgres not available: {reason}")
+
+    if not REAL_DATABASE_URL:
+        unavailable("DATABASE_URL is not set")
+    try:
+        with psycopg.connect(
+            REAL_DATABASE_URL, autocommit=True, connect_timeout=3
+        ) as conn:
+            row = conn.execute(
+                "SELECT 1 FROM pg_database WHERE datname = %s", (TEST_DB,)
+            ).fetchone()
+            if row is None:  # CREATE DATABASE has no IF NOT EXISTS
+                conn.execute(f"CREATE DATABASE {TEST_DB}")
+    except psycopg.OperationalError as error:
+        unavailable(str(error).splitlines()[0])
+    # lock_timeout: if SKIP LOCKED ever broke, a test fails instead of hanging.
+    return make_conninfo(
+        REAL_DATABASE_URL, dbname=TEST_DB, options="-c lock_timeout=5s"
+    )
 
 
 class FakeLLM:
