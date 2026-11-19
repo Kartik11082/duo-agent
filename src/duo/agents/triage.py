@@ -10,7 +10,7 @@ START -> triage -> propose --any action needs approval--> approve --yes--> execu
 - execute: runs each action through connectors/github/tools.ACTIONS. With no repo in state
            (the sample issue below, /demo) it's a dry run that changes nothing.
 
-The checkpointer saves state to duo.db after every node, so a paused run
+The checkpointer saves state to Postgres after every node, so a paused run
 survives the process exiting and can be resumed later.
 
 Run (dry run on the sample issue):
@@ -18,13 +18,15 @@ Run (dry run on the sample issue):
     uv run python -m duo.agents.triage resume yes     # or: resume no
 """
 
-import sqlite3
+import atexit
 import sys
 from typing import Literal, TypedDict
 
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
+from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, Field
 
 from duo.config import PERMISSION_POLICY, settings
@@ -148,8 +150,19 @@ def build_graph():
     builder.add_conditional_edges("approve", route_after_approval, ["execute", END])
     builder.add_edge("execute", END)
 
-    conn = sqlite3.connect(settings.db_path, check_same_thread=False)
-    return builder.compile(checkpointer=SqliteSaver(conn))
+    # A pool, because Telegram handlers run the graph from several threads.
+    # PostgresSaver needs these three connection settings.
+    pool = ConnectionPool(
+        settings.database_url,
+        kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
+        open=True,
+    )
+    # Stop the pool's background threads before Python exits; otherwise exit
+    # stalls about 5 seconds per thread and prints warnings.
+    atexit.register(pool.close)
+    checkpointer = PostgresSaver(pool)
+    checkpointer.setup()  # creates or migrates its tables; does nothing if up to date
+    return builder.compile(checkpointer=checkpointer)
 
 
 # No repo, so running it is always a dry run.
