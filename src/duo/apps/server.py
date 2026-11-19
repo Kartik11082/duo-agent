@@ -55,4 +55,5 @@ async def webhook(
 
 def main() -> None:
     """Entry point for `uv run duo-server`."""
+    storage.setup()
     uvicorn.run(app, port=8000)

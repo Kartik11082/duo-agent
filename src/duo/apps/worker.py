@@ -56,6 +56,7 @@ def main() -> None:
     if not settings.telegram_bot_token or not settings.telegram_chat_id:
         raise SystemExit("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env first.")
 
+    storage.setup()
     app = (
         Application.builder()
         .token(settings.telegram_bot_token)
