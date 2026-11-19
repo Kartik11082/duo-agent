@@ -22,6 +22,7 @@ import atexit
 import sys
 from typing import Literal, TypedDict
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
@@ -137,7 +138,11 @@ def execute_actions(state: IssueState) -> dict:
     return {"results": results}
 
 
-def build_graph():
+def build_graph(checkpointer: BaseCheckpointSaver | None = None):
+    """Build the graph, saving state to Postgres unless given another checkpointer.
+
+    Tests pass InMemorySaver() so they don't need a database.
+    """
     builder = StateGraph(IssueState)
     builder.add_node("triage", triage_issue)
     builder.add_node("propose", propose_actions)
@@ -150,18 +155,23 @@ def build_graph():
     builder.add_conditional_edges("approve", route_after_approval, ["execute", END])
     builder.add_edge("execute", END)
 
-    # A pool, because Telegram handlers run the graph from several threads.
-    # PostgresSaver needs these three connection settings.
-    pool = ConnectionPool(
-        settings.database_url,
-        kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
-        open=True,
-    )
-    # Stop the pool's background threads before Python exits; otherwise exit
-    # stalls about 5 seconds per thread and prints warnings.
-    atexit.register(pool.close)
-    checkpointer = PostgresSaver(pool)
-    checkpointer.setup()  # creates or migrates its tables; does nothing if up to date
+    if checkpointer is None:
+        # A pool, because Telegram handlers run the graph from several threads.
+        # PostgresSaver needs these three connection settings.
+        pool = ConnectionPool(
+            settings.database_url,
+            kwargs={
+                "autocommit": True,
+                "prepare_threshold": 0,
+                "row_factory": dict_row,
+            },
+            open=True,
+        )
+        # Stop the pool's background threads before Python exits; otherwise exit
+        # stalls about 5 seconds per thread and prints warnings.
+        atexit.register(pool.close)
+        checkpointer = PostgresSaver(pool)
+        checkpointer.setup()  # creates or migrates its tables; does nothing if up to date
     return builder.compile(checkpointer=checkpointer)
 
 
