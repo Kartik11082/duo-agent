@@ -10,7 +10,7 @@ Call setup() once at startup, before the other functions.
 """
 
 import psycopg
-from psycopg.rows import dict_row
+from psycopg.rows import DictRow, dict_row
 from psycopg.types.json import Jsonb
 
 from duo.config import settings
@@ -31,13 +31,16 @@ CREATE TABLE IF NOT EXISTS jobs (
 """
 
 
-def connect() -> psycopg.Connection:
+def connect() -> psycopg.Connection[DictRow]:
     """Open a connection. Use it as `with connect() as conn:`.
 
     The with block commits if it succeeds, rolls back on an exception, and
     always closes. Rows come back as dicts, e.g. row["id"].
     """
-    return psycopg.connect(settings.database_url, row_factory=dict_row)
+    # Connection[DictRow].connect is psycopg.connect, but typed to return dict rows.
+    return psycopg.Connection[DictRow].connect(
+        settings.database_url, row_factory=dict_row
+    )
 
 
 def setup() -> None:
