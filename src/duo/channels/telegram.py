@@ -9,13 +9,16 @@
 import asyncio
 import logging
 import uuid
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
 from telegram.ext import ContextTypes
 
-from duo.agents.triage import SAMPLE_ISSUE, build_graph
+from duo.agents.triage import SAMPLE_ISSUE, IssueInput, build_graph
 from duo.config import settings
 
 log = logging.getLogger("duo.worker")
@@ -43,21 +46,24 @@ def describe_results(results: list[str]) -> str:
     return "\n".join(f"• {line}" for line in results)
 
 
-async def triage_and_ask(bot: Bot, thread_id: str, issue: dict, heading: str) -> None:
+async def triage_and_ask(
+    bot: Bot, thread_id: str, issue: Mapping[str, Any], heading: str
+) -> None:
     """Run the graph until it pauses for approval, then send the proposal.
 
     If the policy marks every action "auto", the graph doesn't pause: it runs
     the actions and we just report the results.
     """
-    config = {"configurable": {"thread_id": thread_id}}
-    graph_input = {
+    config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
+    graph_input: IssueInput = {
         "repo": issue["repo"],  # empty for the sample issue: dry run
         "number": issue["number"],
         "title": issue["title"],
         "body": issue["body"],
     }
     # graph.invoke blocks while the LLM runs; a thread keeps the bot responsive.
-    result = await asyncio.to_thread(graph.invoke, graph_input, config)
+    # (A lambda, because pyright can't pick between invoke's overloads here.)
+    result = await asyncio.to_thread(lambda: graph.invoke(graph_input, config))
 
     if "__interrupt__" not in result:
         await bot.send_message(
@@ -88,6 +94,7 @@ async def demo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/demo: triage the sample issue, pause, and ask for approval."""
     if not is_allowed(update):
         return
+    assert update.message is not None  # always set for a command
     await update.message.reply_text("Triaging the sample issue...")
     thread_id = f"demo-{uuid.uuid4().hex[:8]}"
     heading = f"Issue (dry run): {SAMPLE_ISSUE['title']}"
@@ -97,13 +104,19 @@ async def demo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def on_button(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
     """Approve/Reject tap: resume the paused run named in the button."""
     query = update.callback_query
+    assert query is not None  # always set for a button tap
     if not is_allowed(update):
         await query.answer("Not allowed.")
         return
     await query.answer()  # stops the loading spinner on the button
 
+    # Our buttons always carry data. A message older than 48 hours comes as an
+    # InaccessibleMessage, which has no text: not handled yet.
+    assert query.data is not None
+    assert isinstance(query.message, Message)
+
     answer, thread_id = query.data.split(":", 1)
-    config = {"configurable": {"thread_id": thread_id}}
+    config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
     original = query.message.text
 
     # Nothing waiting to run means this run already finished (e.g. a double tap).
@@ -122,7 +135,9 @@ async def on_button(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None
     # Editing first removes the buttons, so a second tap is less likely.
     await query.edit_message_text(f"{original}\n\nWorking...")
     try:
-        result = await asyncio.to_thread(graph.invoke, Command(resume=answer), config)
+        result = await asyncio.to_thread(
+            lambda: graph.invoke(Command(resume=answer), config)
+        )
     except Exception as error:
         # E.g. GitHub down mid-way. Safe to retry later: both actions are idempotent.
         log.exception("Resuming %s failed", thread_id)
