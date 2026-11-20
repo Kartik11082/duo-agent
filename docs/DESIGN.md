@@ -27,8 +27,12 @@ Agreed 2026-11-19. Change this file when a decision changes.
 
 ## Configuration: `agent.yaml`
 
-The non-secret settings, validated with Pydantic at startup. A dashboard will edit
-the same settings later.
+The non-secret settings, validated with Pydantic at startup: an unknown key, an
+unknown connector or tool, or a policy other than `auto`/`approve` stops duo with
+the key named. A dashboard will edit the same settings later. `num_ctx` and
+`temperature` are optional; without `num_ctx` the provider's default is used.
+A connector is on only if it is listed under `connectors:` (`enabled` defaults to
+true).
 
 ```yaml
 model: {provider: ollama, name: "qwen2.5:7b", num_ctx: 8192}
@@ -48,14 +52,17 @@ schedules:
 
 ## Connectors
 
-Each connector has a manifest that describes it, so the host (and later a
-dashboard) can set it up without knowing its code:
+Each connector has a manifest, `connectors/<id>/manifest.yaml`, that describes it,
+so the host (and later a dashboard) can set it up without knowing its code.
+`connectors/registry.py` lists the manifests and, for native connectors, the Python
+functions behind their tools and triggers, and checks they match at startup.
+`credentials` are the names `get_secret()` takes.
 
 ```yaml
 id: github
 kind: native            # native (Python in this repo) | mcp (a server we launch)
 auth: github_app        # github_app | api_key | oauth2 | none
-credentials: [app_id, private_key]
+credentials: [github_app_id, github_private_key_path, github_webhook_secret]
 tools: {list_issues: auto, get_issue: auto, add_label: approve, post_comment: approve}
 triggers: [issues.opened]
 ```
@@ -98,7 +105,8 @@ model change.
 
 ## Secrets
 
-`get_secret(name)` reads `.env` locally and SSM Parameter Store on AWS. Google
+`get_secret(name)` reads `.env` locally and SSM Parameter Store on AWS. Names are
+the lowercase `.env` names, e.g. `github_webhook_secret`. Google
 OAuth uses a one-time `duo connect google` command until the dashboard exists.
 
 ## AWS
