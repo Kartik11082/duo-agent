@@ -22,3 +22,9 @@ connectors:
     # Per-tool overrides of the manifest's defaults: auto | approve.
     # Example: {post_comment: auto}
     policy: {}
+  # MCP connectors: the worker starts or connects to their servers at startup.
+  # enabled: false skips that entirely.
+  fetch:
+    enabled: true
+  web_search:
+    enabled: true # needs TAVILY_API_KEY in .env

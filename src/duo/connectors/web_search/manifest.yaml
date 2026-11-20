@@ -1,0 +1,15 @@
+# Web search with Tavily, through Tavily's hosted MCP server: nothing to
+# install or run, so the AWS image needs no Node. https://docs.tavily.com
+id: web_search
+kind: mcp # native: Python in this repo | mcp: an MCP server
+auth: api_key
+credentials: [tavily_api_key]
+server:
+  transport: streamable_http
+  url: https://mcp.tavily.com/mcp/
+  # Sent as a header, so the key stays out of the URL (and out of logs).
+  bearer_token: tavily_api_key
+# Tool -> default policy. Only search: fetch already reads pages, and every
+# tool's schema costs context tokens.
+tools:
+  tavily_search: auto # read-only

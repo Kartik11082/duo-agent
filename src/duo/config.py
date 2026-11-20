@@ -102,6 +102,9 @@ class Settings(BaseSettings):
     # Keep the .pem outside this folder: OneDrive would sync it to the cloud.
     github_private_key_path: str = ""
 
+    # Tavily web search (connectors/web_search): needed only if it's enabled.
+    tavily_api_key: str = ""
+
 
 # Import these everywhere: `from duo.config import agent, settings`
 agent = load_agent_config(Path("agent.yaml"))

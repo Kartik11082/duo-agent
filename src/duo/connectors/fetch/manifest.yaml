@@ -1,0 +1,14 @@
+# Fetch: reads a web page as markdown. The reference MCP fetch server,
+# https://github.com/modelcontextprotocol/servers/tree/main/src/fetch
+id: fetch
+kind: mcp # native: Python in this repo | mcp: an MCP server
+auth: none
+# Started by the worker with uvx, pinned so an update can't change it unseen.
+server:
+  transport: stdio
+  command: uvx
+  args: ["mcp-server-fetch==2026.11.18"]
+# Tool -> default policy. A tool the server has but this list doesn't is
+# never given to the agent.
+tools:
+  fetch: auto # read-only

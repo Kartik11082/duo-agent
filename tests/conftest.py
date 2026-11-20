@@ -45,6 +45,7 @@ def offline_settings(monkeypatch):
     monkeypatch.setattr(settings, "ollama_base_url", "http://127.0.0.1:9")  # nothing
     monkeypatch.setattr(settings, "database_url", "")  # only test_storage.py sets one
     monkeypatch.setattr(settings, "langsmith_api_key", "")
+    monkeypatch.setattr(settings, "tavily_api_key", "")
 
 
 @pytest.fixture(scope="session")

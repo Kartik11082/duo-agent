@@ -60,11 +60,25 @@ functions behind their tools and triggers, and checks they match at startup.
 
 ```yaml
 id: github
-kind: native            # native (Python in this repo) | mcp (a server we launch)
+kind: native            # native (Python in this repo) | mcp (an MCP server)
 auth: github_app        # github_app | api_key | oauth2 | none
 credentials: [github_app_id, github_private_key_path, github_webhook_secret]
 tools: {list_issues: auto, get_issue: auto, add_label: approve, post_comment: approve}
 triggers: [issues.opened]
+```
+
+An MCP manifest adds `server:`, how to reach the server: a command the worker
+starts (`transport: stdio`), or a hosted URL (`transport: streamable_http`, with
+an optional `bearer_token` credential sent as a header). Only the tools listed
+under `tools:` are given to the agent.
+
+```yaml
+id: web_search
+kind: mcp
+auth: api_key
+credentials: [tavily_api_key]
+server: {transport: streamable_http, url: "https://mcp.tavily.com/mcp/", bearer_token: tavily_api_key}
+tools: {tavily_search: auto}
 ```
 
 Order: GitHub (native), then MCP `fetch` and web search (Tavily; read-only), then
