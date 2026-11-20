@@ -1,0 +1,12 @@
+# What the GitHub connector is, as data: read by connectors/registry.py.
+id: github
+kind: native # native: Python in this repo | mcp: a server we launch
+auth: github_app # github_app | api_key | oauth2 | none
+# The secrets it needs, by their .env names (lowercase).
+credentials: [github_app_id, github_private_key_path, github_webhook_secret]
+# Tool -> default policy. agent.yaml can override each one.
+tools:
+  add_label: approve
+  post_comment: approve
+# Webhook events this connector turns into jobs, as "<event>.<action>".
+triggers: [issues.opened]
