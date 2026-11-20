@@ -51,9 +51,14 @@ def test_missing_model_fails(tmp_path):
 
 
 def test_num_ctx_is_left_to_ollama_unless_set(monkeypatch):
+    monkeypatch.setattr(agent.model, "num_ctx", None)
     assert llm.get_llm().num_ctx is None
     monkeypatch.setattr(agent.model, "num_ctx", 8192)
     assert llm.get_llm().num_ctx == 8192
+
+
+def test_repo_agent_yaml_sets_an_8k_context():
+    assert agent.model.num_ctx == 8192
 
 
 def test_get_secret_reads_settings(monkeypatch):
