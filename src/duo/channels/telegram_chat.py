@@ -13,7 +13,6 @@ limit). The "chat:" prefix keeps these taps away from triage's buttons.
 times, and an old button must not answer a newer pause you haven't seen.
 """
 
-import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -49,9 +48,9 @@ def thread_config(thread_id: str) -> RunnableConfig:
     return {"configurable": {"thread_id": thread_id}}
 
 
-def pending_pause(agent, thread_id: str) -> Interrupt | None:
+async def pending_pause(agent, thread_id: str) -> Interrupt | None:
     """The pause on this thread that's waiting for a tap, or None."""
-    interrupts = agent.get_state(thread_config(thread_id)).interrupts
+    interrupts = (await agent.aget_state(thread_config(thread_id))).interrupts
     return interrupts[0] if interrupts else None
 
 
@@ -76,10 +75,8 @@ async def run_and_reply(bot: Bot, agent, thread_id: str, agent_input) -> None:
     """
     chat_id = settings.telegram_chat_id
     try:
-        # invoke blocks while the LLM runs; a thread keeps the bot responsive.
-        result = await asyncio.to_thread(
-            lambda: agent.invoke(agent_input, thread_config(thread_id))
-        )
+        # Async, so the bot stays responsive while the LLM runs (agents/chat.py).
+        result = await agent.ainvoke(agent_input, thread_config(thread_id))
     except Exception as error:
         # E.g. Ollama down. Other GitHub errors already went back to the model.
         log.exception("Chat run on %s failed", thread_id)
@@ -110,7 +107,7 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     thread_id = current_thread(update.message.chat_id)
 
     # A new message now would leave the paused tool call without an answer.
-    if pending_pause(agent, thread_id) is not None:
+    if await pending_pause(agent, thread_id) is not None:
         await update.message.reply_text(
             "Approve or reject the action above first, or send /new to start over."
         )
@@ -148,7 +145,7 @@ async def on_chat_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     original = query.message.text
 
     # A double tap, or a button from an earlier pause on this thread.
-    pause = pending_pause(agent, thread_id)
+    pause = await pending_pause(agent, thread_id)
     if pause is None or not pause.id.startswith(pause_id):
         await query.edit_message_text(f"{original}\n\nAlready handled.")
         return

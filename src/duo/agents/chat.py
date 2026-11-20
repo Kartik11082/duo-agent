@@ -15,10 +15,13 @@ create_agent builds that loop as a LangGraph graph. Middleware hooks into it:
 
 Each Telegram chat is one thread, saved by the checkpointer like triage's runs,
 so a pause for approval survives restarts.
+
+The agent runs async (ainvoke) on the bot's event loop, because MCP tools are
+async-only. Sync tools, like GitHub's, still work: LangGraph runs them in a
+thread. So the checkpointer is the async AsyncPostgresSaver.
 """
 
-import atexit
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import cast
 
 from github import GithubException
@@ -35,10 +38,10 @@ from langchain.agents.middleware import (
 from langchain_core.messages import AnyMessage, HumanMessage, trim_messages
 from langchain_core.tools import BaseTool
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.checkpoint.postgres import PostgresSaver
-from psycopg import Connection
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg import AsyncConnection
 from psycopg.rows import DictRow, dict_row
-from psycopg_pool import ConnectionPool
+from psycopg_pool import AsyncConnectionPool
 
 from duo.config import agent, settings
 from duo.connectors.github.chat_tools import CHAT_TOOLS
@@ -85,8 +88,9 @@ def build_interrupt_on(
 
 
 @wrap_model_call
-def trim_history(
-    request: ModelRequest, handler: Callable[[ModelRequest], ModelResponse]
+async def trim_history(
+    request: ModelRequest,
+    handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
 ) -> ModelResponse:
     """Send the model only the newest messages that fit. The checkpoint keeps all."""
     num_ctx = agent.model.num_ctx or DEFAULT_NUM_CTX
@@ -108,7 +112,7 @@ def trim_history(
             i for i, m in enumerate(request.messages) if isinstance(m, HumanMessage)
         )
         messages = request.messages[last_human:]
-    return handler(request.override(messages=messages))
+    return await handler(request.override(messages=messages))
 
 
 def github_error(error: Exception, _request: ToolCallRequest) -> str | None:
@@ -128,26 +132,27 @@ def github_tools() -> list[BaseTool]:
     return [by_name[name] for name in tools_for("github")]
 
 
-def build_agent(checkpointer: BaseCheckpointSaver | None = None):
-    """Build the agent, saving threads to Postgres unless given another checkpointer.
+async def open_checkpointer() -> AsyncPostgresSaver:
+    """Open the Postgres pool the chat threads are saved in, and create the tables.
 
-    Tests pass InMemorySaver() so they don't need a database.
+    Call it on the event loop the agent will run on (the worker's post_init).
+    Close it with `await checkpointer.conn.close()`.
     """
-    if checkpointer is None:
-        # The same setup as triage.build_graph(); see the comments there.
-        pool: ConnectionPool[Connection[DictRow]] = ConnectionPool(
-            settings.database_url,
-            kwargs={
-                "autocommit": True,
-                "prepare_threshold": 0,
-                "row_factory": dict_row,
-            },
-            open=True,
-        )
-        atexit.register(pool.close)
-        checkpointer = PostgresSaver(pool)
-        checkpointer.setup()
+    # The same settings as triage.build_graph(); see the comments there.
+    pool: AsyncConnectionPool[AsyncConnection[DictRow]] = AsyncConnectionPool(
+        settings.database_url,
+        kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
+        open=False,  # opening needs a running event loop, so it's awaited below
+    )
+    await pool.open()
+    checkpointer = AsyncPostgresSaver(pool)
+    await checkpointer.setup()
+    return checkpointer
 
+
+def build_agent(checkpointer: BaseCheckpointSaver):
+    """Build the agent. The worker passes open_checkpointer()'s; tests pass
+    InMemorySaver() so they don't need a database."""
     tools = github_tools()
     return create_agent(
         get_llm(),

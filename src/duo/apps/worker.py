@@ -10,6 +10,7 @@ Run:  uv run duo-worker
 
 import asyncio
 import logging
+import sys
 
 from telegram import Bot
 from telegram.ext import (
@@ -54,8 +55,22 @@ async def process_jobs(bot: Bot) -> None:
             storage.finish_job(job["id"], "failed", str(error))
 
 
+async def on_start(app: Application) -> None:
+    """post_init: runs once on the bot's event loop, before polling starts."""
+    # The chat agent is async, so its Postgres pool must open on this loop.
+    checkpointer = await chat.open_checkpointer()
+    app.bot_data["chat_checkpointer"] = checkpointer
+    app.bot_data["chat_agent"] = chat.build_agent(checkpointer)
+    await start_job_loop(app)
+
+
+async def on_stop(app: Application) -> None:
+    """post_shutdown: close the chat agent's Postgres pool."""
+    await app.bot_data["chat_checkpointer"].conn.close()
+
+
 async def start_job_loop(app: Application) -> None:
-    """Runs once when the bot starts (post_init)."""
+    """Reset jobs a crash left running, then start the job loop."""
     reset = storage.reset_running_jobs()
     if reset:
         log.info("Reset %d job(s) left running by a previous crash", reset)
@@ -71,8 +86,17 @@ def main() -> None:
     if enable_tracing():
         log.info("LangSmith tracing on, project %s", agent.tracing.project)
     storage.setup()
-    app = Application.builder().token(token).post_init(start_job_loop).build()
-    app.bot_data["chat_agent"] = chat.build_agent()
+    if sys.platform == "win32":
+        # Windows' default ProactorEventLoop can't run psycopg's async mode.
+        # The bot (run_polling) uses whichever loop is set here.
+        asyncio.set_event_loop(asyncio.SelectorEventLoop())
+    app = (
+        Application.builder()
+        .token(token)
+        .post_init(on_start)
+        .post_shutdown(on_stop)
+        .build()
+    )
     app.add_handler(CommandHandler("demo", demo))
     app.add_handler(CommandHandler("new", new_chat))
     # Each tap goes to the handler whose pattern matches its button data.

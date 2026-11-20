@@ -29,11 +29,12 @@ def call(name, **args):
     return AIMessage(content="", tool_calls=[{"name": name, "args": args, "id": "c1"}])
 
 
-def make_agent(monkeypatch, *replies):
-    """An in-memory chat agent whose model gives these replies, in order."""
+def make_agent(monkeypatch, *replies, checkpointer=None):
+    """A chat agent whose model gives these replies, in order. In memory unless
+    given a checkpointer."""
     model = FakeChatModel(messages=iter(replies))
     monkeypatch.setattr(chat, "get_llm", lambda: model)
-    return chat.build_agent(InMemorySaver()), model
+    return chat.build_agent(checkpointer or InMemorySaver()), model
 
 
 def fake_github(monkeypatch):

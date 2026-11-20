@@ -4,6 +4,8 @@ The model is a fake that replays scripted replies (including tool calls), the
 GitHub functions are replaced, and threads are kept in memory.
 """
 
+import asyncio
+
 import pytest
 from chat_fakes import call, fake_github, make_agent
 from github import GithubException
@@ -23,7 +25,15 @@ def github(monkeypatch):
 
 
 def ask(agent, text):
-    return agent.invoke({"messages": [{"role": "user", "content": text}]}, CONFIG)
+    """One user turn, run async like the worker does (agents/chat.py)."""
+    turn = {"messages": [{"role": "user", "content": text}]}
+    return asyncio.run(agent.ainvoke(turn, CONFIG))
+
+
+def resume(agent, decision):
+    """Answer the pause with "approve" or "reject"."""
+    command = Command(resume={"decisions": [{"type": decision}]})
+    return asyncio.run(agent.ainvoke(command, CONFIG))
 
 
 def test_read_tool_runs_without_pausing(monkeypatch, github):
@@ -55,7 +65,7 @@ def test_approve_runs_the_tool(monkeypatch, github):
     )
     ask(agent, "Label #7 as bug")
     assert github == []  # waits for the tap
-    result = agent.invoke(Command(resume={"decisions": [{"type": "approve"}]}), CONFIG)
+    result = resume(agent, "approve")
     assert github == [("add_label", "o/r", 7, "bug")]
     assert result["messages"][-1].content == "Done: #7 is labeled bug."
 
@@ -67,7 +77,7 @@ def test_reject_does_not_run_the_tool(monkeypatch, github):
         AIMessage("OK, I left #7 alone."),
     )
     ask(agent, "Label #7 as bug")
-    result = agent.invoke(Command(resume={"decisions": [{"type": "reject"}]}), CONFIG)
+    result = resume(agent, "reject")
     assert github == []
     tool_message = result["messages"][-2]
     assert isinstance(tool_message, ToolMessage)
