@@ -26,6 +26,7 @@ from duo.agents import chat
 from duo.channels.telegram import demo, on_button, triage_and_ask
 from duo.channels.telegram_chat import new_chat, on_chat_button, on_message
 from duo.config import agent, get_secret, settings
+from duo.connectors.mcp import McpServers
 from duo.llm import enable_tracing
 
 logging.basicConfig(
@@ -57,6 +58,12 @@ async def process_jobs(bot: Bot) -> None:
 
 async def on_start(app: Application) -> None:
     """post_init: runs once on the bot's event loop, before polling starts."""
+    # Started first: a missing key or a renamed tool stops the worker here.
+    servers = McpServers()
+    mcp_tools = await servers.start()
+    app.bot_data["mcp_servers"] = servers
+    for connector_id, tools in mcp_tools.items():
+        log.info("MCP %s tools: %s", connector_id, [tool.name for tool in tools])
     # The chat agent is async, so its Postgres pool must open on this loop.
     checkpointer = await chat.open_checkpointer()
     app.bot_data["chat_checkpointer"] = checkpointer
@@ -65,7 +72,8 @@ async def on_start(app: Application) -> None:
 
 
 async def on_stop(app: Application) -> None:
-    """post_shutdown: close the chat agent's Postgres pool."""
+    """post_shutdown: close the MCP sessions and the chat agent's Postgres pool."""
+    await app.bot_data["mcp_servers"].stop()
     await app.bot_data["chat_checkpointer"].conn.close()
 
 
