@@ -78,6 +78,13 @@ class Settings(BaseSettings):
 
     # Optional LangSmith tracing (llm.enable_tracing): on only when the key is set.
     langsmith_api_key: str = ""
+    # false keeps the key but turns tracing off.
+    langsmith_tracing: bool = True
+    # Passed on to LangSmith as LANGSMITH_* variables when tracing is on.
+    # Empty means LangSmith's default.
+    langsmith_endpoint: str = ""
+    langsmith_agent_id: str = ""
+    langsmith_agent_environment: str = ""
 
     # Telegram approvals (worker.py). Empty defaults so the rest of the
     # project still runs without a bot; worker.py checks they are set.

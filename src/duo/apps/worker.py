@@ -24,9 +24,9 @@ from duo import storage
 from duo.agents import chat
 from duo.channels.telegram import demo, on_button, triage_and_ask
 from duo.channels.telegram_chat import new_chat, on_chat_button, on_message
-from duo.config import agent, get_secret, settings
+from duo.config import get_secret, settings
 from duo.connectors.mcp import McpServers
-from duo.llm import enable_tracing
+from duo.llm import enable_tracing, tracing_destination
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -91,7 +91,7 @@ def main() -> None:
         raise SystemExit("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env first.")
 
     if enable_tracing():
-        log.info("LangSmith tracing on, project %s", agent.tracing.project)
+        log.info("LangSmith tracing on, to %s", tracing_destination())
     storage.setup()
     if sys.platform == "win32":
         # Windows' default ProactorEventLoop can't run psycopg's async mode.
