@@ -130,7 +130,8 @@ run `terraform destroy` between demos to keep costs inside the $100 credit.
 - CI (GitHub Actions) on every push: ruff, pyright, pytest.
 - Deploy workflow, started by hand: build the image, push to ECR, `terraform apply`.
   Authenticates to AWS with OIDC, so no long-lived keys.
-- Optional LangSmith tracing, on when its keys are set.
+- Optional LangSmith tracing, on when `LANGSMITH_API_KEY` is set in `.env`. The
+  project name is `tracing: {project: duo}` in `agent.yaml`.
 
 ## Layout
 
