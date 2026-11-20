@@ -32,6 +32,14 @@ class ModelConfig(BaseModel):
     num_ctx: int | None = None  # None: the provider's default context size
 
 
+class TracingConfig(BaseModel):
+    """LangSmith tracing. It's on only when LANGSMITH_API_KEY is set in .env."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    project: str = "duo"  # the LangSmith project the runs go to
+
+
 class ConnectorConfig(BaseModel):
     """One entry under `connectors:`, keyed by the connector's manifest id."""
 
@@ -49,6 +57,7 @@ class AgentConfig(BaseModel):
 
     model: ModelConfig
     connectors: dict[str, ConnectorConfig] = Field(default_factory=dict)
+    tracing: TracingConfig = Field(default_factory=TracingConfig)
 
 
 def load_agent_config(path: Path) -> AgentConfig:
@@ -66,6 +75,9 @@ class Settings(BaseSettings):
 
     # Where Ollama listens, when agent.yaml's model.provider is "ollama".
     ollama_base_url: str = "http://localhost:11434"
+
+    # Optional LangSmith tracing (llm.enable_tracing): on only when the key is set.
+    langsmith_api_key: str = ""
 
     # Telegram approvals (worker.py). Empty defaults so the rest of the
     # project still runs without a bot; worker.py checks they are set.

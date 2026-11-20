@@ -12,6 +12,10 @@ model:
   # 4096, too small for the chat agent's history plus its tool schemas).
   num_ctx: 8192
 
+# LangSmith tracing: on only when LANGSMITH_API_KEY is set in .env.
+tracing:
+  project: duo
+
 connectors:
   github:
     enabled: true

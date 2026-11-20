@@ -15,6 +15,17 @@ from psycopg.conninfo import make_conninfo
 from duo.agents import triage
 from duo.config import settings
 
+# No LangSmith tracing in tests, even if the shell turned it on. Done here,
+# before any LLM runs, because LangSmith caches these the first time it reads
+# them. (The worker turns tracing on with llm.enable_tracing(); tests never do.)
+for name in (
+    "LANGSMITH_TRACING",
+    "LANGSMITH_TRACING_V2",
+    "LANGCHAIN_TRACING",
+    "LANGCHAIN_TRACING_V2",
+):
+    os.environ.pop(name, None)
+
 WEBHOOK_SECRET = "test-webhook-secret"
 CHAT_ID = 1234  # the one chat allowed to use the bot in tests
 TEST_DB = "duo_test"
@@ -33,6 +44,7 @@ def offline_settings(monkeypatch):
     monkeypatch.setattr(settings, "github_webhook_secret", WEBHOOK_SECRET)
     monkeypatch.setattr(settings, "ollama_base_url", "http://127.0.0.1:9")  # nothing
     monkeypatch.setattr(settings, "database_url", "")  # only test_storage.py sets one
+    monkeypatch.setattr(settings, "langsmith_api_key", "")
 
 
 @pytest.fixture(scope="session")

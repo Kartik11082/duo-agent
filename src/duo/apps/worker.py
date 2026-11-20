@@ -24,7 +24,8 @@ from duo import storage
 from duo.agents import chat
 from duo.channels.telegram import demo, on_button, triage_and_ask
 from duo.channels.telegram_chat import new_chat, on_chat_button, on_message
-from duo.config import get_secret, settings
+from duo.config import agent, get_secret, settings
+from duo.llm import enable_tracing
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -67,6 +68,8 @@ def main() -> None:
     if not token or not settings.telegram_chat_id:
         raise SystemExit("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env first.")
 
+    if enable_tracing():
+        log.info("LangSmith tracing on, project %s", agent.tracing.project)
     storage.setup()
     app = Application.builder().token(token).post_init(start_job_loop).build()
     app.bot_data["chat_agent"] = chat.build_agent()

@@ -7,10 +7,29 @@ interface is the same: .invoke(), .bind_tools(), .with_structured_output().
 Smoke test:  uv run python -m duo.llm
 """
 
+import os
+
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 
-from duo.config import agent, settings
+from duo.config import agent, get_secret, settings
+
+
+def enable_tracing() -> bool:
+    """Turn on LangSmith tracing if LANGSMITH_API_KEY is set. Returns whether it's on.
+
+    Call it once at startup, before any LLM runs: LangChain reads its tracing
+    settings from os.environ, and caches them on first use. pydantic-settings
+    reads .env but doesn't put the values in os.environ, so copy them over.
+    The project name comes from agent.yaml's `tracing:`.
+    """
+    api_key = get_secret("langsmith_api_key")
+    if not api_key:
+        return False
+    os.environ["LANGSMITH_TRACING"] = "true"
+    os.environ["LANGSMITH_API_KEY"] = api_key
+    os.environ["LANGSMITH_PROJECT"] = agent.tracing.project
+    return True
 
 
 def get_llm() -> BaseChatModel:
