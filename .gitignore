@@ -10,3 +10,5 @@ __pycache__/
 # Local data (SQLite and Chroma, from later milestones)
 *.db*
 chroma/
+docs/images/*
+.vscode/*
