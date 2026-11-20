@@ -11,6 +11,7 @@ import pytest
 from chat_fakes import call, fake_github, fake_mcp_tool, make_agent
 from github import GithubException
 from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.tools import StructuredTool
 from langgraph.types import Command
 
 from duo import config
@@ -170,3 +171,23 @@ def test_agent_has_github_and_mcp_tools(monkeypatch):
         "list_issues",
         "post_comment",
     ]
+
+
+def test_a_long_tool_result_is_cut(monkeypatch):
+    async def fetch(url: str) -> str:  # noqa: ARG001
+        return "x" * (chat.MAX_TOOL_RESULT_CHARS + 500)
+
+    tool = StructuredTool.from_function(coroutine=fetch, name="fetch", description="")
+    agent, model = make_agent(
+        monkeypatch,
+        call("fetch", url="https://example.com"),
+        AIMessage("A page of x."),
+        mcp_tools={"fetch": [tool]},
+    )
+    ask(agent, "Summarize https://example.com")
+    result = model.seen[-1][-1]  # the tool result, as the model saw it
+    assert isinstance(result, ToolMessage)
+    assert result.text == (
+        "x" * chat.MAX_TOOL_RESULT_CHARS
+        + f"\n[cut to the first {chat.MAX_TOOL_RESULT_CHARS} characters]"
+    )

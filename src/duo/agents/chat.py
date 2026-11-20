@@ -15,6 +15,7 @@ create_agent builds that loop as a LangGraph graph. Middleware hooks into it:
 - trim_history: the model sees only the newest messages that fit its context.
 - HumanInTheLoopMiddleware: pauses before tools whose policy isn't exactly "auto".
 - log_tool_calls: logs each tool call, so the worker log shows what ran.
+- cap_tool_results: cuts a very long tool result, so it can't fill the window.
 - ToolErrorMiddleware: a GitHub error goes back to the model as the tool's result.
 
 Each Telegram chat is one thread, saved by the checkpointer like triage's runs,
@@ -83,6 +84,11 @@ ToolsByConnector = Mapping[str, Sequence[BaseTool]]
 RESERVED_TOKENS = 3000
 # The window to assume when agent.yaml leaves num_ctx unset: Ollama's default.
 DEFAULT_NUM_CTX = 4096
+# A tool result longer than this (about 1500 tokens) is cut. Otherwise one big
+# page (fetch lets the model ask for up to ~1M characters) would overflow the
+# window, and Ollama would silently drop the oldest tokens: the system prompt
+# and the tools.
+MAX_TOOL_RESULT_CHARS = 6000
 
 
 def needs_approval(connector: str, tool_name: str) -> bool:
@@ -163,6 +169,21 @@ async def log_tool_calls(
     return result
 
 
+@wrap_tool_call
+async def cap_tool_results(
+    request: ToolCallRequest,
+    handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]],
+) -> ToolMessage | Command[Any]:
+    """Cut a tool result to MAX_TOOL_RESULT_CHARS, saying so at the end."""
+    result = await handler(request)
+    if isinstance(result, ToolMessage) and len(result.text) > MAX_TOOL_RESULT_CHARS:
+        log.info("Cut %s's result from %d chars", result.name, len(result.text))
+        cut = result.text[:MAX_TOOL_RESULT_CHARS]
+        note = f"[cut to the first {MAX_TOOL_RESULT_CHARS} characters]"
+        result = result.model_copy(update={"content": f"{cut}\n{note}"})
+    return result
+
+
 def github_error(error: Exception, _request: ToolCallRequest) -> str | None:
     """A GitHub API error (e.g. 404 for a missing issue) becomes the tool's result,
     so the model can tell the user. Anything else fails the run."""
@@ -214,8 +235,9 @@ def build_agent(
         middleware=[
             trim_history,
             HumanInTheLoopMiddleware(interrupt_on=build_interrupt_on(tools)),
-            # Outside ToolErrorMiddleware, so it also logs GitHub errors' results.
+            # Outside ToolErrorMiddleware, so these also see GitHub errors' results.
             log_tool_calls,
+            cap_tool_results,
             ToolErrorMiddleware(github_error),
         ],
         checkpointer=checkpointer,
