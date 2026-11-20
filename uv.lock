@@ -338,6 +338,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "pygithub" },
     { name = "python-telegram-bot" },
+    { name = "pyyaml" },
     { name = "uvicorn" },
 ]
 
@@ -359,6 +360,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.16.3" },
     { name = "pygithub", specifier = ">=2.10.0" },
     { name = "python-telegram-bot", specifier = ">=22.8" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "uvicorn", specifier = ">=0.54.0" },
 ]
 

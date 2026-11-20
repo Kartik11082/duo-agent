@@ -1,0 +1,19 @@
+# duo's non-secret settings. Secrets stay in .env.
+# Validated at startup (config.py): an unknown key or a bad value stops duo
+# with a message naming it.
+
+model:
+  provider: ollama
+  name: "qwen2.5:7b"
+  # 0 means the same input gives (nearly) the same output, which is what
+  # triage and evals need.
+  temperature: 0.0
+  # Context window in tokens. Unset means the provider's default.
+  # num_ctx: 8192
+
+connectors:
+  github:
+    enabled: true
+    # Per-tool overrides of the manifest's defaults: auto | approve.
+    # Example: {post_comment: auto}
+    policy: {}

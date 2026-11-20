@@ -1,25 +1,71 @@
 """All settings for duo, in one place.
 
-Values come from environment variables or a local .env file. Anything that's
-missing falls back to the defaults below, so the project runs with no .env
-at all.
+Two sources:
+- agent.yaml: the non-secret settings (model, connectors, policy overrides),
+  validated into `agent` below. A typo there stops duo at startup.
+- Environment variables or a local .env file: secrets and per-machine values,
+  loaded into `settings`. Anything that's missing falls back to the defaults
+  below.
+
+Both files are read from the current directory, so run duo from the repo root.
 """
 
+from pathlib import Path
+from typing import Literal
+
+import yaml
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# What a tool's policy may be. Only "auto" runs without asking (see policy.py).
+Policy = Literal["auto", "approve"]
+
+
+class ModelConfig(BaseModel):
+    """Which LLM to use. Switching to Bedrock later is an agent.yaml change."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str
+    name: str
+    temperature: float = 0.0
+    num_ctx: int | None = None  # None: the provider's default context size
+
+
+class ConnectorConfig(BaseModel):
+    """One entry under `connectors:`, keyed by the connector's manifest id."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    # Tool name -> policy, overriding the manifest's default for that tool.
+    policy: dict[str, Policy] = Field(default_factory=dict)
+
+
+class AgentConfig(BaseModel):
+    """The whole of agent.yaml. extra="forbid" turns a misspelled key into an error."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    model: ModelConfig
+    connectors: dict[str, ConnectorConfig] = Field(default_factory=dict)
+
+
+def load_agent_config(path: Path) -> AgentConfig:
+    """Read and validate agent.yaml. Raises ValueError naming the bad key."""
+    with path.open(encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    try:
+        return AgentConfig.model_validate(data)
+    except ValidationError as error:
+        raise ValueError(f"Invalid {path}:\n{error}") from error
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
-    # Which LLM to use. Switching to Bedrock later is a .env change, e.g.
-    # MODEL_PROVIDER=bedrock_converse and MODEL_NAME=<a Bedrock model id>.
-    model_provider: str = "ollama"
-    model_name: str = "qwen2.5:7b"
+    # Where Ollama listens, when agent.yaml's model.provider is "ollama".
     ollama_base_url: str = "http://localhost:11434"
-
-    # 0 means the same input gives (nearly) the same output, which is what
-    # triage and evals need.
-    temperature: float = 0.0
 
     # Telegram approvals (worker.py). Empty defaults so the rest of the
     # project still runs without a bot; worker.py checks they are set.
@@ -52,5 +98,6 @@ PERMISSION_POLICY = {
     "post_comment": "approve",
 }
 
-# Import this everywhere: `from duo.config import settings`
+# Import these everywhere: `from duo.config import agent, settings`
+agent = load_agent_config(Path("agent.yaml"))
 settings = Settings()
