@@ -64,3 +64,10 @@ def test_disabled_or_unlisted_connector_gives_nothing(monkeypatch):
     assert registry.triggers_for("github") == []
     monkeypatch.delitem(registry.agent.connectors, "github")
     assert registry.tools_for("github") == {}
+
+
+def test_manifest_credential_get_secret_does_not_know_fails(monkeypatch):
+    manifest = registry.MANIFESTS["github"]
+    monkeypatch.setattr(manifest, "credentials", ["github_app_key"])
+    with pytest.raises(ValueError, match=r"credential.*github_app_key"):
+        registry.check(config_with({}))

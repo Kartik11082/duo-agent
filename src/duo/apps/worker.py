@@ -14,7 +14,7 @@ from telegram.ext import Application, CallbackQueryHandler, CommandHandler
 
 from duo import storage
 from duo.channels.telegram import demo, on_button, triage_and_ask
-from duo.config import settings
+from duo.config import get_secret, settings
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -53,16 +53,12 @@ async def start_job_loop(app: Application) -> None:
 
 
 def main() -> None:
-    if not settings.telegram_bot_token or not settings.telegram_chat_id:
+    token = get_secret("telegram_bot_token")
+    if not token or not settings.telegram_chat_id:
         raise SystemExit("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env first.")
 
     storage.setup()
-    app = (
-        Application.builder()
-        .token(settings.telegram_bot_token)
-        .post_init(start_job_loop)
-        .build()
-    )
+    app = Application.builder().token(token).post_init(start_job_loop).build()
     app.add_handler(CommandHandler("demo", demo))
     app.add_handler(CallbackQueryHandler(on_button))
     log.info("Worker started. Waiting for jobs; /demo also works.")

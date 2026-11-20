@@ -1,11 +1,11 @@
-"""agent.yaml: the repo's file loads, and mistakes fail at load with the key named."""
+"""agent.yaml loads, mistakes fail at load with the key named, and get_secret()."""
 
 from pathlib import Path
 
 import pytest
 
 from duo import llm
-from duo.config import agent, load_agent_config
+from duo.config import agent, get_secret, load_agent_config, settings
 
 GOOD = """
 model: {provider: ollama, name: "qwen2.5:7b"}
@@ -54,3 +54,15 @@ def test_num_ctx_is_left_to_ollama_unless_set(monkeypatch):
     assert llm.get_llm().num_ctx is None
     monkeypatch.setattr(agent.model, "num_ctx", 8192)
     assert llm.get_llm().num_ctx == 8192
+
+
+def test_get_secret_reads_settings(monkeypatch):
+    # Through settings, so conftest.py's blanking also hides the real secrets.
+    monkeypatch.setattr(settings, "github_webhook_secret", "s3cret")
+    assert get_secret("github_webhook_secret") == "s3cret"
+    assert get_secret("github_app_id") == "0"  # blanked by conftest.py
+
+
+def test_unknown_secret_fails():
+    with pytest.raises(KeyError, match="github_webhok_secret"):
+        get_secret("github_webhok_secret")

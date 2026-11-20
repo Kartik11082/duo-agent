@@ -94,3 +94,15 @@ class Settings(BaseSettings):
 # Import these everywhere: `from duo.config import agent, settings`
 agent = load_agent_config(Path("agent.yaml"))
 settings = Settings()
+
+
+def get_secret(name: str) -> str:
+    """A secret by its .env name in lowercase, e.g. get_secret("github_webhook_secret").
+
+    Reads `settings` (environment variables or .env), so tests that blank a
+    setting also blank the secret. On AWS (P8) this is where SSM Parameter
+    Store will be read instead; callers won't change.
+    """
+    if name not in Settings.model_fields:
+        raise KeyError(f"Unknown secret {name!r}: not a setting in config.Settings")
+    return str(getattr(settings, name))

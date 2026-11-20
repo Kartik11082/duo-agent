@@ -22,7 +22,7 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from duo.config import AgentConfig, Policy, agent
+from duo.config import AgentConfig, Policy, Settings, agent
 from duo.connectors.github import tools as github_tools
 from duo.connectors.github import webhook as github_webhook
 
@@ -109,6 +109,12 @@ def check(config: AgentConfig) -> None:
         if manifest.id != connector_id:
             raise ValueError(
                 f"Manifest registered as {connector_id!r} has id {manifest.id!r}"
+            )
+        unknown = sorted(set(manifest.credentials) - set(Settings.model_fields))
+        if unknown:
+            raise ValueError(
+                f"{connector_id} manifest lists credential(s) that get_secret() "
+                f"doesn't know: {', '.join(unknown)}"
             )
         if manifest.kind == "native":
             missing = sorted(
