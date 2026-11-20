@@ -7,7 +7,7 @@ START -> triage -> propose --any action needs approval--> approve --yes--> execu
 - triage:  the LLM picks a label (the only LLM call).
 - propose: turns the triage into a list of actions, plain data.
 - policy:  policy.py decides if a human must approve (GitHub manifest + agent.yaml).
-- execute: runs each action through connectors/github/tools.ACTIONS. With no repo in state
+- execute: runs each action through ACTIONS (from the registry). With no repo in state
            (the sample issue below, /demo) it's a dry run that changes nothing.
 
 The checkpointer saves state to Postgres after every node, so a paused run
@@ -33,9 +33,13 @@ from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, Field
 
 from duo.config import settings
-from duo.connectors.github.tools import ACTIONS
+from duo.connectors.registry import tools_for
 from duo.llm import get_llm
 from duo.policy import policy_for
+
+# Name -> function for the GitHub tools in its manifest (empty if agent.yaml
+# turns GitHub off). execute_actions looks actions up here.
+ACTIONS = tools_for("github")
 
 # The labels the agent may choose from: GitHub's default labels, so they
 # already exist in new repos. A name that doesn't exist would be created.

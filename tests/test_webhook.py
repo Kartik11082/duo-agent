@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from duo import storage
 from duo.apps.server import app
-from duo.config import settings
+from duo.config import agent, settings
 
 client = TestClient(app)
 
@@ -110,5 +110,12 @@ def test_issue_edited_is_ignored(queued):
 
 def test_push_is_ignored(queued):
     response = post("push", {"ref": "refs/heads/main"})
+    assert response.json() == {"status": "ignored"}
+    assert queued == {}
+
+
+def test_issue_opened_is_ignored_when_github_is_disabled(queued, monkeypatch):
+    monkeypatch.setattr(agent.connectors["github"], "enabled", False)
+    response = post("issues", ISSUE_OPENED)
     assert response.json() == {"status": "ignored"}
     assert queued == {}

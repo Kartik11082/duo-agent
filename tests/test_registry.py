@@ -45,3 +45,22 @@ def test_bad_manifest_fails(tmp_path):
     path.write_text("id: x\nkind: plugin\nauth: none\ntools: {}\n", encoding="utf-8")
     with pytest.raises(ValueError, match="kind"):
         registry.load_manifest(path)
+
+
+def test_manifest_trigger_without_a_job_builder_fails(monkeypatch):
+    monkeypatch.setitem(registry.NATIVE_TRIGGERS, "github", {})
+    with pytest.raises(ValueError, match=r"no function.*issues\.opened"):
+        registry.check(config_with({}))
+
+
+def test_enabled_github_gives_its_tools_and_triggers():
+    assert set(registry.tools_for("github")) == {"add_label", "post_comment"}
+    assert registry.triggers_for("github") == ["issues.opened"]
+
+
+def test_disabled_or_unlisted_connector_gives_nothing(monkeypatch):
+    monkeypatch.setattr(registry.agent.connectors["github"], "enabled", False)
+    assert registry.tools_for("github") == {}
+    assert registry.triggers_for("github") == []
+    monkeypatch.delitem(registry.agent.connectors, "github")
+    assert registry.tools_for("github") == {}

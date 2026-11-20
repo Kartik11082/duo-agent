@@ -27,3 +27,9 @@ def job_from_issue_opened(payload: dict) -> dict:
         "body": issue["body"] or "",  # GitHub sends null for an empty body
         "url": issue["html_url"],
     }
+
+
+# Trigger ("<event>.<action>", as in the manifest) -> function that builds the job.
+JOB_BUILDERS = {
+    "issues.opened": job_from_issue_opened,
+}

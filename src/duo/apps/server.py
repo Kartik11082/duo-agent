@@ -13,7 +13,8 @@ import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Request
 
 from duo import storage
-from duo.connectors.github.webhook import job_from_issue_opened, signature_is_valid
+from duo.connectors import registry
+from duo.connectors.github.webhook import JOB_BUILDERS, signature_is_valid
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -37,11 +38,13 @@ async def webhook(
     if x_github_event == "ping":  # sent once when the webhook is created
         return {"status": "pong"}
 
+    # Only events the GitHub manifest lists, and only while agent.yaml enables it.
     payload = json.loads(body)
-    if x_github_event != "issues" or payload.get("action") != "opened":
+    trigger = f"{x_github_event}.{payload.get('action')}"
+    if trigger not in registry.triggers_for("github"):
         return {"status": "ignored"}
 
-    job = job_from_issue_opened(payload)
+    job = JOB_BUILDERS[trigger](payload)
     thread_id = f"{job['repo']}#{job['number']}"
     queued = storage.add_job(x_github_delivery, "github", thread_id, job)
     log.info(
