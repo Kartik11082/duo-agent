@@ -2,8 +2,7 @@
 
 - Job loop: every 2 seconds, claim a queued GitHub job (from apps/server.py), triage the issue, and send the proposal with Approve/Reject buttons.
 - The bot's handlers (/demo, button taps) live in channels/telegram.py.
-- Chat: text messages, /new and chat button taps go to the chat agent
-  (channels/telegram_chat.py).
+- Chat: text messages, /new and chat button taps go to the chat agent (channels/telegram_chat.py).
 
 Run:  uv run duo-worker
 """
@@ -67,7 +66,7 @@ async def on_start(app: Application) -> None:
     # The chat agent is async, so its Postgres pool must open on this loop.
     checkpointer = await chat.open_checkpointer()
     app.bot_data["chat_checkpointer"] = checkpointer
-    app.bot_data["chat_agent"] = chat.build_agent(checkpointer)
+    app.bot_data["chat_agent"] = chat.build_agent(checkpointer, mcp_tools)
     await start_job_loop(app)
 
 

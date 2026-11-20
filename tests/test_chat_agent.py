@@ -5,9 +5,10 @@ GitHub functions are replaced, and threads are kept in memory.
 """
 
 import asyncio
+import logging
 
 import pytest
-from chat_fakes import call, fake_github, make_agent
+from chat_fakes import call, fake_github, fake_mcp_tool, make_agent
 from github import GithubException
 from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.types import Command
@@ -126,3 +127,46 @@ def test_tools_come_from_the_github_manifest():
 def test_no_github_tools_when_agent_yaml_turns_github_off(monkeypatch):
     monkeypatch.setattr(config.agent.connectors["github"], "enabled", False)
     assert chat.github_tools() == []
+
+
+def test_auto_mcp_tool_runs_without_pausing_and_is_logged(monkeypatch, caplog):
+    calls = []
+    agent, _ = make_agent(
+        monkeypatch,
+        call("fetch", url="https://example.com"),
+        AIMessage("It's the Example Domain page."),
+        mcp_tools={"fetch": [fake_mcp_tool("fetch", calls)]},
+    )
+    with caplog.at_level(logging.INFO, logger="duo.chat"):
+        result = ask(agent, "Summarize https://example.com")
+    assert "__interrupt__" not in result
+    assert calls == [("fetch", "https://example.com")]
+    assert result["messages"][-2].content == "# Page at https://example.com"
+    assert "Tool call fetch {'url': 'https://example.com'}" in caplog.text
+
+
+def test_mcp_tool_its_manifest_does_not_list_pauses(monkeypatch):
+    calls = []
+    agent, _ = make_agent(
+        monkeypatch,
+        call("fetch_raw", url="https://example.com"),
+        mcp_tools={"fetch": [fake_mcp_tool("fetch_raw", calls)]},
+    )
+    result = ask(agent, "Get the raw page")
+    [request] = result["__interrupt__"][0].value["action_requests"]
+    assert request["name"] == "fetch_raw"
+    assert calls == []
+
+
+def test_agent_has_github_and_mcp_tools(monkeypatch):
+    agent, _ = make_agent(
+        monkeypatch, AIMessage("hi"), mcp_tools={"fetch": [fake_mcp_tool("fetch", [])]}
+    )
+    tool_node = agent.get_graph().nodes["tools"].data
+    assert sorted(tool_node.tools_by_name) == [
+        "add_label",
+        "fetch",
+        "get_issue",
+        "list_issues",
+        "post_comment",
+    ]

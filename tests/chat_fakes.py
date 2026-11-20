@@ -4,6 +4,7 @@ from typing import Any
 
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage
+from langchain_core.tools import StructuredTool
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import Field
 
@@ -29,12 +30,26 @@ def call(name, **args):
     return AIMessage(content="", tool_calls=[{"name": name, "args": args, "id": "c1"}])
 
 
-def make_agent(monkeypatch, *replies, checkpointer=None):
+def make_agent(monkeypatch, *replies, checkpointer=None, mcp_tools=None):
     """A chat agent whose model gives these replies, in order. In memory unless
-    given a checkpointer."""
+    given a checkpointer; mcp_tools is {connector id: [tools]}."""
     model = FakeChatModel(messages=iter(replies))
     monkeypatch.setattr(chat, "get_llm", lambda: model)
-    return chat.build_agent(checkpointer or InMemorySaver()), model
+    agent = chat.build_agent(checkpointer or InMemorySaver(), mcp_tools)
+    return agent, model
+
+
+def fake_mcp_tool(name, calls):
+    """A tool like the MCP adapter makes: async only, so calling it on the sync
+    path would fail. Its calls go into `calls`."""
+
+    async def run(url: str) -> str:
+        calls.append((name, url))
+        return f"# Page at {url}"
+
+    return StructuredTool.from_function(
+        coroutine=run, name=name, description="Fetch a URL."
+    )
 
 
 def fake_github(monkeypatch):
