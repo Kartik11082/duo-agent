@@ -2,6 +2,8 @@
 
 - Job loop: every 2 seconds, claim a queued GitHub job (from apps/server.py), triage the issue, and send the proposal with Approve/Reject buttons.
 - The bot's handlers (/demo, button taps) live in channels/telegram.py.
+- Chat: text messages, /new and chat button taps go to the chat agent
+  (channels/telegram_chat.py).
 
 Run:  uv run duo-worker
 """
@@ -10,10 +12,18 @@ import asyncio
 import logging
 
 from telegram import Bot
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler
+from telegram.ext import (
+    Application,
+    CallbackQueryHandler,
+    CommandHandler,
+    MessageHandler,
+    filters,
+)
 
 from duo import storage
+from duo.agents import chat
 from duo.channels.telegram import demo, on_button, triage_and_ask
+from duo.channels.telegram_chat import new_chat, on_chat_button, on_message
 from duo.config import get_secret, settings
 
 logging.basicConfig(
@@ -59,9 +69,14 @@ def main() -> None:
 
     storage.setup()
     app = Application.builder().token(token).post_init(start_job_loop).build()
+    app.bot_data["chat_agent"] = chat.build_agent()
     app.add_handler(CommandHandler("demo", demo))
-    app.add_handler(CallbackQueryHandler(on_button))
-    log.info("Worker started. Waiting for jobs; /demo also works.")
+    app.add_handler(CommandHandler("new", new_chat))
+    # Each tap goes to the handler whose pattern matches its button data.
+    app.add_handler(CallbackQueryHandler(on_button, pattern=r"^(yes|no):"))
+    app.add_handler(CallbackQueryHandler(on_chat_button, pattern=r"^chat:"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
+    log.info("Worker started. Waiting for jobs and messages; /demo and /new work.")
     app.run_polling()  # long polling: no public URL needed
 
 
