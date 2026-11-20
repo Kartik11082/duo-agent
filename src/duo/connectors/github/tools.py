@@ -71,8 +71,11 @@ def post_comment(
     return f"Commented on #{number}"
 
 
-# Name -> function. The graph runs proposed actions by looking them up here.
+# Name -> function, for every tool in manifest.yaml (the registry checks it).
+# The triage graph runs its proposed actions by looking them up here.
 ACTIONS = {
+    "list_issues": list_issues,
+    "get_issue": get_issue,
     "add_label": add_label,
     "post_comment": post_comment,
 }

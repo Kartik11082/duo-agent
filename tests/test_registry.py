@@ -14,7 +14,12 @@ def config_with(connectors):
 
 def test_github_manifest_matches_the_code():
     manifest = registry.MANIFESTS["github"]
-    assert manifest.tools == {"add_label": "approve", "post_comment": "approve"}
+    assert manifest.tools == {
+        "list_issues": "auto",
+        "get_issue": "auto",
+        "add_label": "approve",
+        "post_comment": "approve",
+    }
     assert manifest.triggers == ["issues.opened"]
     assert set(manifest.tools) == set(registry.NATIVE_TOOLS["github"])
 
@@ -54,7 +59,8 @@ def test_manifest_trigger_without_a_job_builder_fails(monkeypatch):
 
 
 def test_enabled_github_gives_its_tools_and_triggers():
-    assert set(registry.tools_for("github")) == {"add_label", "post_comment"}
+    tools = {"list_issues", "get_issue", "add_label", "post_comment"}
+    assert set(registry.tools_for("github")) == tools
     assert registry.triggers_for("github") == ["issues.opened"]
 
 
