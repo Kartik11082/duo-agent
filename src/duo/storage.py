@@ -1,7 +1,10 @@
-"""The jobs table: a small, durable queue in Postgres.
+"""The jobs table, a small durable queue in Postgres, and chat_threads.
 
 server.py adds a job for each webhook; worker.py claims and runs them.
 A job's life: pending -> running -> done | failed.
+
+chat_threads remembers which thread each Telegram chat is on, so a restart
+continues the same conversation.
 
 delivery_id is UNIQUE, so the same GitHub delivery can only be queued once:
 the database itself does the deduplication.
@@ -27,6 +30,12 @@ CREATE TABLE IF NOT EXISTS jobs (
     status      TEXT NOT NULL DEFAULT 'pending',
     error       TEXT,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- The chat agent's current LangGraph thread for each Telegram chat; /new replaces it.
+CREATE TABLE IF NOT EXISTS chat_threads (
+    chat_id   BIGINT PRIMARY KEY,
+    thread_id TEXT NOT NULL
 );
 """
 
@@ -96,3 +105,22 @@ def reset_running_jobs() -> int:
             "UPDATE jobs SET status = 'pending' WHERE status = 'running'"
         )
         return cursor.rowcount
+
+
+def get_chat_thread(chat_id: int) -> str | None:
+    """The chat's current thread id, or None if it has none yet."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT thread_id FROM chat_threads WHERE chat_id = %s", (chat_id,)
+        ).fetchone()
+        return row["thread_id"] if row else None
+
+
+def set_chat_thread(chat_id: int, thread_id: str) -> None:
+    """Make thread_id the chat's current thread, replacing any earlier one."""
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO chat_threads (chat_id, thread_id) VALUES (%s, %s) "
+            "ON CONFLICT (chat_id) DO UPDATE SET thread_id = EXCLUDED.thread_id",
+            (chat_id, thread_id),
+        )

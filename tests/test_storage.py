@@ -14,11 +14,11 @@ from duo.config import settings
 
 @pytest.fixture(autouse=True)
 def db(monkeypatch, test_database_url):
-    """Point storage at duo_test and start each test with an empty jobs table."""
+    """Point storage at duo_test and start each test with empty tables."""
     monkeypatch.setattr(settings, "database_url", test_database_url)
     storage.setup()
     with storage.connect() as conn:
-        conn.execute("TRUNCATE jobs RESTART IDENTITY")
+        conn.execute("TRUNCATE jobs, chat_threads RESTART IDENTITY")
 
 
 def add_jobs(count):
@@ -92,3 +92,11 @@ def test_concurrent_claimers_never_claim_the_same_job():
     for thread in threads:
         thread.join()
     assert sorted(claimed) == list(range(1, 41))  # each job exactly once
+
+
+def test_chat_thread_is_remembered_and_replaced():
+    assert storage.get_chat_thread(1234) is None
+    storage.set_chat_thread(1234, "chat-1234-aaaa")
+    storage.set_chat_thread(1234, "chat-1234-bbbb")  # /new
+    assert storage.get_chat_thread(1234) == "chat-1234-bbbb"
+    assert storage.get_chat_thread(5678) is None  # other chats are separate
