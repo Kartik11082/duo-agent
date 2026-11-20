@@ -106,3 +106,13 @@ def test_a_turn_over_budget_is_sent_whole(monkeypatch):
     agent, model = make_agent(monkeypatch, AIMessage("ok"))
     ask(agent, "y" * 1000)
     assert [m.content for m in model.seen[-1]][1:] == ["y" * 1000]
+
+
+def test_tools_come_from_the_github_manifest():
+    names = [tool.name for tool in chat.github_tools()]
+    assert names == ["list_issues", "get_issue", "add_label", "post_comment"]
+
+
+def test_no_github_tools_when_agent_yaml_turns_github_off(monkeypatch):
+    monkeypatch.setattr(config.agent.connectors["github"], "enabled", False)
+    assert chat.github_tools() == []

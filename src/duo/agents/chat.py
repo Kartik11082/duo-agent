@@ -42,6 +42,7 @@ from psycopg_pool import ConnectionPool
 
 from duo.config import agent, settings
 from duo.connectors.github.chat_tools import CHAT_TOOLS
+from duo.connectors.registry import tools_for
 from duo.llm import get_llm
 from duo.policy import policy_for
 
@@ -119,6 +120,14 @@ def github_error(error: Exception, _request: ToolCallRequest) -> str | None:
     return None
 
 
+def github_tools() -> list[BaseTool]:
+    """The chat tools for the tools in GitHub's manifest; none if agent.yaml turns
+    GitHub off. A manifest tool without a chat_tools wrapper is a KeyError here
+    (test_github_tools.py checks they match)."""
+    by_name = {tool.name: tool for tool in CHAT_TOOLS}
+    return [by_name[name] for name in tools_for("github")]
+
+
 def build_agent(checkpointer: BaseCheckpointSaver | None = None):
     """Build the agent, saving threads to Postgres unless given another checkpointer.
 
@@ -139,13 +148,14 @@ def build_agent(checkpointer: BaseCheckpointSaver | None = None):
         checkpointer = PostgresSaver(pool)
         checkpointer.setup()
 
+    tools = github_tools()
     return create_agent(
         get_llm(),
-        tools=CHAT_TOOLS,
+        tools=tools,
         system_prompt=SYSTEM_PROMPT,
         middleware=[
             trim_history,
-            HumanInTheLoopMiddleware(interrupt_on=build_interrupt_on(CHAT_TOOLS)),
+            HumanInTheLoopMiddleware(interrupt_on=build_interrupt_on(tools)),
             ToolErrorMiddleware(github_error),
         ],
         checkpointer=checkpointer,

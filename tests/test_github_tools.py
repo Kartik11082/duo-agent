@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from duo.connectors.github import chat_tools, tools
+from duo.connectors.registry import MANIFESTS
 
 
 def make_issue(number, title="Title", labels=(), is_pr=False, body="Body"):
@@ -85,6 +86,6 @@ def test_chat_tools_call_through_to_github(repo):
     assert chat_tools.get_issue.invoke({"repo": "o/r", "number": 1}).startswith("#1")
 
 
-def test_chat_tool_names_match_the_policy_keys():
-    names = [t.name for t in chat_tools.CHAT_TOOLS]
-    assert names == ["list_issues", "get_issue", "add_label", "post_comment"]
+def test_every_manifest_tool_has_a_chat_tool():
+    names = {t.name for t in chat_tools.CHAT_TOOLS}
+    assert names == set(MANIFESTS["github"].tools)
