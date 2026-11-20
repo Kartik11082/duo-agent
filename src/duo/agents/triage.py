@@ -6,7 +6,7 @@ START -> triage -> propose --any action needs approval--> approve --yes--> execu
 
 - triage:  the LLM picks a label (the only LLM call).
 - propose: turns the triage into a list of actions, plain data.
-- policy:  config.PERMISSION_POLICY decides if a human must approve.
+- policy:  policy.py decides if a human must approve (GitHub manifest + agent.yaml).
 - execute: runs each action through connectors/github/tools.ACTIONS. With no repo in state
            (the sample issue below, /demo) it's a dry run that changes nothing.
 
@@ -32,9 +32,10 @@ from psycopg.rows import DictRow, dict_row
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, Field
 
-from duo.config import PERMISSION_POLICY, settings
+from duo.config import settings
 from duo.connectors.github.tools import ACTIONS
 from duo.llm import get_llm
+from duo.policy import policy_for
 
 # The labels the agent may choose from: GitHub's default labels, so they
 # already exist in new repos. A name that doesn't exist would be created.
@@ -114,7 +115,7 @@ def propose_actions(state: IssueState) -> dict:
 def route_by_policy(state: IssueState) -> str:
     """Pause for approval unless every action is explicitly "auto"."""
     for action in state["actions"]:
-        if PERMISSION_POLICY.get(action["name"]) != "auto":
+        if policy_for("github", action["name"]) != "auto":
             return "approve"
     return "execute"
 

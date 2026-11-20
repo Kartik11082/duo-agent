@@ -8,6 +8,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
 from duo.agents import triage
+from duo.config import agent
 
 CONFIG = {"configurable": {"thread_id": "test-issue"}}
 
@@ -40,8 +41,9 @@ def test_resume_no_is_rejected(graph):
 
 
 def test_all_auto_runs_without_pausing(graph, monkeypatch):
-    policy = {"add_label": "auto", "post_comment": "auto"}
-    monkeypatch.setattr(triage, "PERMISSION_POLICY", policy)
+    overrides = agent.connectors["github"].policy  # agent.yaml's policy: {}
+    monkeypatch.setitem(overrides, "add_label", "auto")
+    monkeypatch.setitem(overrides, "post_comment", "auto")
     result = graph.invoke(triage.SAMPLE_ISSUE, CONFIG)
     assert "__interrupt__" not in result
     assert all(line.startswith("(dry run)") for line in result["results"])
